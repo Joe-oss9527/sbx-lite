@@ -25,11 +25,11 @@ SB_CONF_DIR="/etc/sing-box"
 SB_CONF="$SB_CONF_DIR/config.json"
 SB_SVC="/etc/systemd/system/sing-box.service"
 
-DOMAIN="${DOMAIN:-}"              # required: your domain (DNS only / gray-cloud)
-CERT_MODE="${CERT_MODE:-}"        # cf_dns | le_http | "" (no ACME)
-CF_Token="${CF_Token:-}"          # for cf_dns (scoped token; not persisted)
-CF_Zone_ID="${CF_Zone_ID:-}"      # optional for dns_cf
-CF_Account_ID="${CF_Account_ID:-}"# optional for dns_cf
+DOMAIN="${DOMAIN:-}"               # required: your domain (DNS only / gray-cloud)
+CERT_MODE="${CERT_MODE:-}"         # cf_dns | le_http | "" (no ACME)
+CF_Token="${CF_Token:-}"           # for cf_dns (scoped token; not persisted)
+CF_Zone_ID="${CF_Zone_ID:-}"       # optional for dns_cf
+CF_Account_ID="${CF_Account_ID:-}" # optional for dns_cf
 
 # If you already have certs, set BOTH to enable WS/Hy2 without ACME:
 CERT_FULLCHAIN="${CERT_FULLCHAIN:-}"
