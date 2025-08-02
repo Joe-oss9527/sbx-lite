@@ -103,7 +103,6 @@ download_singbox() {
   local arch tmp api url tag raw
   arch="$(detect_arch)"
   tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' RETURN
 
   if [[ -n "$SINGBOX_VERSION" ]]; then
     tag="$SINGBOX_VERSION"
@@ -114,7 +113,7 @@ download_singbox() {
 
   msg "Fetching sing-box release info for $arch ..."
   if have curl; then raw="$(curl -fsSL "$api")"; else raw="$(wget -qO- "$api")"; fi
-  [[ -n "${raw:-}" ]] || die "Failed to query GitHub API."
+  [[ -n "${raw:-}" ]] || { rm -rf "$tmp"; die "Failed to query GitHub API."; }
 
   if [[ -z "$SINGBOX_VERSION" ]]; then
     tag="$(printf '%s' "$raw" | jq -r .tag_name)"
@@ -134,8 +133,9 @@ download_singbox() {
 
   local bin
   bin="$(find "$tmp" -type f -name 'sing-box' | head -1)"
-  [[ -n "$bin" ]] || die "sing-box binary not found in package"
+  [[ -n "$bin" ]] || { rm -rf "$tmp"; die "sing-box binary not found in package"; }
   install -m 0755 "$bin" "$SB_BIN"
+  rm -rf "$tmp"
   msg "Installed sing-box -> $SB_BIN"
 }
 
@@ -162,8 +162,6 @@ acme_issue_cf_dns() {
   out="$("$ac" --issue -d "$DOMAIN" --dns dns_cf -k ec-256 --server letsencrypt "${force[@]}" 2>&1)"
   local rc=$?
   set -e
-
-  echo "$out" | sed -n '1,8p' >/dev/null
 
   if [[ $rc -ne 0 ]]; then
     if echo "$out" | grep -qiE 'Skipping|Domains not changed|Next renewal time'; then
