@@ -120,7 +120,7 @@ download_singbox() {
   local pkg="$tmp/sb.tgz"
   msg "Downloading sing-box package ..."
   if have curl; then curl -fsSL "$url" -o "$pkg"; else wget -qO "$pkg" "$url"; fi
-  tar -xzf "$pkg" -f "$pkg" -C "$tmp"
+  tar -xzf "$pkg" -C "$tmp"
 
   local top; top="$(tar -tzf "$pkg" | head -1 | cut -d/ -f1)"
   local bin; bin="$(find "$tmp/$top" -type f -name 'sing-box' | head -1)"
