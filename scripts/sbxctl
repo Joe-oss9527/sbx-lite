@@ -1,87 +1,79 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-validate_name() {
-  local name="$1"
-  [[ "$name" =~ ^[a-zA-Z0-9._-]{1,32}$ ]]
-}
+ROOT=/opt/sbx
+PANEL=$ROOT/panel
+CONF_YML=/etc/sbx/sbx.yml
 
-CMD="${1:-}"
+usage() {
+cat <<'EOF'
+sbxctl <cmd>
 
-apply_restart() {
-  node /opt/sbx/panel/gen-config.js
-  sing-box check -c /etc/sing-box/config.json
-  systemctl restart sing-box
-  systemctl status --no-pager sing-box | sed -n '1,10p' || true
-}
+Core:
+  apply                 Generate config, check, restart sing-box
+  enable <reality|ws|hy2>
+  disable <reality|ws|hy2>
 
-case "$CMD" in
-  uuid) sing-box generate uuid ;;
-  reality) sing-box generate reality-keypair ;;
-  shortid) sing-box generate rand 8 --hex ;;
-  apply) apply_restart ;;
-  enable)
-    KEY="${2:-}"
-    [[ -z "$KEY" ]] && { echo "Usage: sbxctl enable {reality|ws|hy2}"; exit 1; }
-    node /opt/sbx/panel/cmd.js enable "$KEY"
-    apply_restart
-    ;;
-  disable)
-    KEY="${2:-}"
-    [[ -z "$KEY" ]] && { echo "Usage: sbxctl disable {reality|ws|hy2}"; exit 1; }
-    node /opt/sbx/panel/cmd.js disable "$KEY"
-    apply_restart
-    ;;
-  cf)
-    MODE="${2:-}"
-    [[ -z "$MODE" ]] && { echo "Usage: sbxctl cf {proxied|direct}"; exit 1; }
-    node /opt/sbx/panel/cmd.js cf "$MODE"
-    echo "Set cloudflare_mode=$MODE and adjusted cert paths."
-    ;;
-  sethost)
-    HOST="${2:-}"
-    if [[ -z "$HOST" ]]; then
-      HOST="$(curl -4 -fsS ifconfig.co || curl -4 -fsS api.ipify.org || true)"
-      if [[ -z "$HOST" ]]; then echo "Usage: sbxctl sethost <host_or_ip>"; exit 1; fi
-    fi
-    node /opt/sbx/panel/cmd.js sethost "$HOST"
-    echo "export.host=$HOST"
-    ;;
-  setdomain)
-    DOMAIN="${2:-}"
-    [[ -z "$DOMAIN" ]] && { echo "Usage: sbxctl setdomain <domain>"; exit 1; }
-    node /opt/sbx/panel/cmd.js setdomain "$DOMAIN"
-    echo "vless_ws_tls.domain=$DOMAIN"
-    ;;
-  adduser)
-    NAME="${2:-user}"
-    if ! validate_name "$NAME"; then echo "Invalid name. Use [a-zA-Z0-9._-], length<=32." >&2; exit 1; fi
-    node /opt/sbx/panel/cmd.js adduser "$NAME"
-    apply_restart
-    ;;
-  rmuser)
-    NAME="${2:-}"
-    if [[ -z "$NAME" ]] || ! validate_name "$NAME"; then echo "Usage: sbxctl rmuser <name>  (name: [a-zA-Z0-9._-]{1,32})" >&2; exit 1; fi
-    node /opt/sbx/panel/cmd.js rmuser "$NAME"
-    apply_restart
-    ;;
-  *)
-    cat <<EOF
-Usage: sbxctl <command>
-  uuid|reality|shortid
-  apply
-  enable {reality|ws|hy2}
-  disable {reality|ws|hy2}
-  cf {proxied|direct}
-  sethost [host_or_ip]
-  setdomain <domain>
-  adduser <name>
-  rmuser <name>
-  user-rotate <name>
+Users:
+  user-add <name>
+  user-rm <name>
   user-enable <name>
   user-disable <name>
-  doctor
+  user-rotate <name>
+
+Network & CF:
+  sethost <host>
+  sethost-auto
+  cf <proxied|direct>
+  setdomain <domain>
+
+Keys:
+  reality-keys          Ensure REALITY keypair present
+
+Diag:
+  doctor                Run diagnose.sh
 EOF
-    exit 1
+}
+
+cmd=${1:-}
+arg1=${2:-}
+
+case "$cmd" in
+  apply)
+    node "$PANEL/gen-config.js"
+    sing-box check -c /etc/sing-box/config.json
+    systemctl restart sing-box
     ;;
+  enable)
+    case "$arg1" in
+      reality) node "$PANEL/cmd.js" enable reality ;;
+      ws) node "$PANEL/cmd.js" enable vless_ws_tls ;;
+      hy2) node "$PANEL/cmd.js" enable hysteria2 ;;
+      *) usage; exit 1;;
+    esac
+    ;;
+  disable)
+    case "$arg1" in
+      reality) node "$PANEL/cmd.js" disable reality ;;
+      ws) node "$PANEL/cmd.js" disable vless_ws_tls ;;
+      hy2) node "$PANEL/cmd.js" disable hysteria2 ;;
+      *) usage; exit 1;;
+    esac
+    ;;
+  user-add) node "$PANEL/cmd.js" user-add "${arg1:?name required}" ;;
+  user-rm) node "$PANEL/cmd.js" user-rm "${arg1:?name required}" ;;
+  user-enable) node "$PANEL/cmd.js" user-enable "${arg1:?name required}" ;;
+  user-disable) node "$PANEL/cmd.js" user-disable "${arg1:?name required}" ;;
+  user-rotate) node "$PANEL/cmd.js" user-rotate "${arg1:?name required}" ;;
+
+  sethost) node "$PANEL/cmd.js" sethost "${arg1:?host required}" ;;
+  sethost-auto) node "$PANEL/cmd.js" autodetect_host ;;
+  cf) node "$PANEL/cmd.js" cf "${arg1:?proxied|direct}" ;;
+  setdomain) node "$PANEL/cmd.js" setdomain "${arg1:?domain required}" ;;
+
+  reality-keys) node "$PANEL/cmd.js" reality-keys ;;
+
+  doctor) bash /opt/sbx/scripts/diagnose.sh ;;
+
+  *) usage; exit 1;;
 esac

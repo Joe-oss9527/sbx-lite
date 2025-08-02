@@ -1,97 +1,48 @@
-const fs = require('fs');
-const yaml = require('js-yaml');
+import fs from 'fs';
+import yaml from 'js-yaml';
 
-const SBX_YAML = '/etc/sbx/sbx.yml';
+const SBX_YML = '/etc/sbx/sbx.yml';
 
-function loadDoc() {
-  const raw = fs.readFileSync(SBX_YAML, 'utf8');
-  return yaml.load(raw);
+function load(){ return yaml.load(fs.readFileSync(SBX_YML,'utf8')); }
+
+function echoKV(k,v){ console.log(`${k}=${v}`); }
+
+function main(){
+  const cfg = load();
+
+  // export
+  echoKV('HOST', cfg?.export?.host||'');
+
+  // users
+  const users = (cfg?.users||[]).filter(u=>u.enabled);
+  echoKV('ENABLED_USERS', users.length);
+
+  // reality
+  const re = cfg?.inbounds?.reality||{};
+  echoKV('REALITY_ENABLED', !!re.enabled);
+  echoKV('REALITY_SNI', re.server_name||'');
+  echoKV('REALITY_PRIVKEY', re.private_key? 'SET':'MISSING');
+  echoKV('REALITY_SHORTID', re.short_id? 'SET':'MISSING');
+  echoKV('REALITY_PUBKEY', re.public_key? 'SET':'MISSING');
+
+  // ws
+  const ws = cfg?.inbounds?.vless_ws_tls||{};
+  echoKV('WS_ENABLED', !!ws.enabled);
+  echoKV('WS_DOMAIN', ws.domain||'');
+  const wsAcme = ws?.acme?.enabled ? 'ACME' : ((ws.cert_path && ws.key_path)?'FILES':'MISSING');
+  echoKV('WS_TLS', wsAcme);
+
+  // hy2
+  const hy = cfg?.inbounds?.hysteria2||{};
+  echoKV('HY2_ENABLED', !!hy.enabled);
+  const tls = hy?.tls||{};
+  const hyAcme = tls?.acme?.enabled ? 'ACME' : ((tls.certificate_path && tls.key_path)?'FILES':'MISSING');
+  echoKV('HY2_TLS', hyAcme);
+  echoKV('HY2_UP', (hy.up_mbps??'') );
+  echoKV('HY2_DOWN', (hy.down_mbps??'') );
+
+  // quick JSON summary
+  console.log('SBX_SUMMARY_JSON=' + JSON.stringify({ users: users.length, reality: re, ws, hy2: hy }));
 }
 
-function summary(doc) {
-  const usersAll = Array.isArray(doc.users) ? doc.users : [];
-  const users = usersAll.filter(u => u && u.enabled);
-  const ib = doc.inbounds || {};
-  const r = ib.reality || {};
-  const w = ib.vless_ws_tls || {};
-  const h = ib.hysteria2 || {};
-
-  const usersBrief = users.map(u => ({
-    name: u.name || '',
-    enabled: !!u.enabled,
-    hasToken: !!u.token,
-    hasUUID: !!u.vless_uuid,
-    hasHy2Pass: !!u.hy2_pass
-  }));
-
-  const anyHy2Pass = users.some(u => !!u.hy2_pass);
-  const needHy2Pass = !!h.enabled;
-  const globalHy2 = !!(h.global_password && String(h.global_password).length > 0);
-
-  return {
-    exportHost: (doc.export && doc.export.host) || "",
-    cloudflareMode: doc.cloudflare_mode || "",
-    usersCount: users.length,
-    users: usersBrief,
-    inbounds: {
-      realityEnabled: !!r.enabled,
-      realityPort: r.listen_port || 443,
-      realityServerName: r.server_name || "",
-      realityPrivateKeyPresent: !!r.private_key,
-      realityShortIdPresent: !!r.short_id,
-
-      wsEnabled: !!w.enabled,
-      wsDomain: w.domain || "",
-      wsPath: w.path || "/ws",
-      wsPort: w.listen_port || 443,
-      wsCertPath: w.cert_path || "",
-      wsKeyPath: w.key_path || "",
-
-      hy2Enabled: !!h.enabled,
-      hy2Port: h.listen_port || 8443,
-      hy2GlobalPassword: h.global_password || ""
-    },
-    hy2: {
-      needHy2Pass: needHy2Pass,
-      anyUserHy2Pass: anyHy2Pass,
-      hasGlobalPassword: globalHy2
-    }
-  };
-}
-
-const mode = process.argv.includes('--sh') ? 'sh' : 'json';
-const doc = loadDoc();
-const data = summary(doc);
-
-if (mode === 'json') {
-  process.stdout.write(JSON.stringify(data, null, 2));
-} else {
-  const e = (k, v) => console.log(`${k}=${String(v).replace(/[\n\r]/g,'')}`);
-  e('EXPORT_HOST', data.exportHost);
-  e('CLOUDFLARE_MODE', data.cloudflareMode);
-  e('USERS_COUNT', data.usersCount);
-  // Print first user brief (legacy)
-  const u = data.users[0] || {};
-  e('U_NAME', u.name || '');
-  e('U_TOKEN', u.hasToken ? '1' : '');
-  e('U_UUID', u.hasUUID ? '1' : '');
-  e('U_HY2', u.hasHy2Pass ? '1' : '');
-
-  e('REALITY_ENABLED', data.inbounds.realityEnabled ? 1 : 0);
-  e('REALITY_PORT', data.inbounds.realityPort);
-  e('REALITY_SNI', data.inbounds.realityServerName);
-  e('REALITY_PVT', data.inbounds.realityPrivateKeyPresent ? 1 : 0);
-  e('REALITY_SID', data.inbounds.realityShortIdPresent ? 1 : 0);
-
-  e('WS_ENABLED', data.inbounds.wsEnabled ? 1 : 0);
-  e('WS_DOMAIN', data.inbounds.wsDomain);
-  e('WS_PATH', data.inbounds.wsPath);
-  e('WS_PORT', data.inbounds.wsPort);
-  e('WS_CERTPATH', data.inbounds.wsCertPath);
-  e('WS_KEYPATH', data.inbounds.wsKeyPath);
-
-  e('HY2_ENABLED', data.inbounds.hy2Enabled ? 1 : 0);
-  e('HY2_PORT', data.inbounds.hy2Port);
-  e('HY2_ANY_USER_PASS', data.hy2.anyUserHy2Pass ? 1 : 0);
-  e('HY2_GLOBAL_PASS', data.hy2.hasGlobalPassword ? 1 : 0);
-}
+main();

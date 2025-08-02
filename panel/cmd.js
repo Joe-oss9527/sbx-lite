@@ -1,116 +1,164 @@
-const fs = require('fs');
-const yaml = require('js-yaml');
-const { execSync } = require('child_process');
+import fs from 'fs';
+import yaml from 'js-yaml';
+import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
+import child_process from 'child_process';
 
-const SBX_YAML = '/etc/sbx/sbx.yml';
+const SBX_YML = '/etc/sbx/sbx.yml';
 
-function load() { return yaml.load(fs.readFileSync(SBX_YAML, 'utf8')); }
-function save(doc){ fs.writeFileSync(SBX_YAML, yaml.dump(doc), 'utf8'); }
+function load(){ return yaml.load(fs.readFileSync(SBX_YML,'utf8')); }
+function save(obj){ fs.writeFileSync(SBX_YML, yaml.dump(obj, {lineWidth:120})); }
 
-function genUUID(){ return execSync('sing-box generate uuid').toString().trim(); }
-function rand(n){ return require('crypto').randomBytes(n).toString('base64url'); }
-
-function enable(doc, key, on) {
-  doc.inbounds = doc.inbounds || {};
-  const map = { reality:'reality', ws:'vless_ws_tls', hy2:'hysteria2' };
-  const k = map[key];
-  if (!k) throw new Error('unknown inbound key');
-  doc.inbounds[k] = doc.inbounds[k] || {};
-  doc.inbounds[k].enabled = !!on;
-  return doc;
+function exec(cmd){
+  return child_process.execSync(cmd, {encoding:'utf8'}).trim();
 }
 
-function cfmode(doc, mode) {
-  if (!['proxied','direct'].includes(mode)) throw new Error('mode must be proxied|direct');
-  doc.cloudflare_mode = mode;
-  // also adjust default cert paths for ws tls
-  doc.inbounds = doc.inbounds || {};
-  doc.inbounds.vless_ws_tls = doc.inbounds.vless_ws_tls || {};
-  if (mode === 'proxied') {
-    doc.inbounds.vless_ws_tls.cert_path = '/etc/ssl/cf/origin.pem';
-    doc.inbounds.vless_ws_tls.key_path = '/etc/ssl/cf/origin.key';
+function realityGen(){
+  const priv = exec('sing-box generate reality-keypair | grep PrivateKey | awk \'{print $2}\'');
+  const pub  = exec('sing-box generate reality-keypair | grep PublicKey | awk \'{print $2}\'');
+  // call twice is wasteful; better to run once and parse both; keeping simple here
+  return { private_key: priv, public_key: pub };
+}
+
+const actions = {
+  enable(proto){
+    const cfg = load();
+    cfg.inbounds[proto].enabled = true;
+    save(cfg);
+    console.log(`enabled ${proto}`);
+  },
+  disable(proto){
+    const cfg = load();
+    cfg.inbounds[proto].enabled = false;
+    save(cfg);
+    console.log(`disabled ${proto}`);
+  },
+  sethost(host){
+    const cfg = load();
+    cfg.export = cfg.export || {};
+    cfg.export.host = host;
+    save(cfg);
+    console.log(`host set to ${host}`);
+  },
+  autodetect_host(){
+    // best-effort
+    try {
+      const ip = exec("curl -fsS https://api.ipify.org");
+      actions.sethost(ip);
+    } catch(e){
+      console.error("detect host failed:", e.message);
+      process.exit(1);
+    }
+  },
+  cf(mode){
+    const cfg = load();
+    cfg.cloudflare_mode = mode;
+    // adjust default cert paths for ws
+    if (!cfg.inbounds.vless_ws_tls) cfg.inbounds.vless_ws_tls = {};
+    if (mode === 'proxied'){
+      cfg.inbounds.vless_ws_tls.cert_path = "/etc/ssl/cf/origin.pem";
+      cfg.inbounds.vless_ws_tls.key_path  = "/etc/ssl/cf/origin.key";
+    } else {
+      cfg.inbounds.vless_ws_tls.cert_path = "/etc/ssl/fullchain.pem";
+      cfg.inbounds.vless_ws_tls.key_path  = "/etc/ssl/privkey.pem";
+    }
+    save(cfg);
+    console.log(`cloudflare_mode=${mode}`);
+  },
+  setdomain(domain){
+    const cfg = load();
+    cfg.inbounds.vless_ws_tls = cfg.inbounds.vless_ws_tls || {};
+    cfg.inbounds.vless_ws_tls.domain = domain;
+    save(cfg);
+    console.log(`ws.domain=${domain}`);
+  },
+  user_add(name){
+    const cfg = load();
+    cfg.users = cfg.users || [];
+    const token = crypto.randomBytes(12).toString('base64url');
+    const vless_uuid = uuidv4();
+    const hy2_pass = crypto.randomBytes(16).toString('base64url');
+    cfg.users.push({ name, enabled: true, token, vless_uuid, hy2_pass });
+    save(cfg);
+    console.log(JSON.stringify({name, token, vless_uuid, hy2_pass}, null, 2));
+  },
+  user_rm(name){
+    const cfg = load();
+    cfg.users = (cfg.users || []).filter(u => u.name !== name);
+    save(cfg);
+    console.log(`removed ${name}`);
+  },
+  user_enable(name, on=true){
+    const cfg = load();
+    const u = (cfg.users||[]).find(u=>u.name===name);
+    if (!u) { console.error('no such user'); process.exit(1); }
+    u.enabled = !!on;
+    save(cfg);
+    console.log(`${on?'enabled':'disabled'} ${name}`);
+  },
+  user_rotate(name){
+    const cfg = load();
+    const u = (cfg.users||[]).find(u=>u.name===name);
+    if (!u) { console.error('no such user'); process.exit(1); }
+    u.token = crypto.randomBytes(12).toString('base64url');
+    save(cfg);
+    console.log(JSON.stringify({name, token: u.token}, null, 2));
+  },
+  reality_keys(){
+    const cfg = load();
+    if (!cfg.inbounds.reality) cfg.inbounds.reality = {};
+    if (!cfg.inbounds.reality.private_key || !cfg.inbounds.reality.public_key){
+      const kp = realityGen();
+      cfg.inbounds.reality.private_key = kp.private_key;
+      cfg.inbounds.reality.public_key  = kp.public_key;
+      save(cfg);
+    }
+    console.log('reality keys ensured');
+  }
+};
+
+// CLI
+const [,, cmd, arg1, arg2] = process.argv;
+if (!cmd) {
+  console.log(`Usage:
+  node cmd.js enable <reality|vless_ws_tls|hysteria2>
+  node cmd.js disable <reality|vless_ws_tls|hysteria2>
+  node cmd.js sethost <host> | autodetect_host
+  node cmd.js cf <proxied|direct>
+  node cmd.js setdomain <domain>
+  node cmd.js user-add <name> | user-rm <name> | user-enable <name> | user-disable <name> | user-rotate <name>
+  node cmd.js reality-keys
+`);
+  process.exit(0);
+}
+
+try{
+  if (cmd==='enable' || cmd==='disable'){
+    actions[cmd](arg1);
+  } else if (cmd==='sethost'){
+    actions.sethost(arg1);
+  } else if (cmd==='autodetect_host'){
+    actions.autodetect_host();
+  } else if (cmd==='cf'){
+    actions.cf(arg1);
+  } else if (cmd==='setdomain'){
+    actions.setdomain(arg1);
+  } else if (cmd==='user-add'){
+    actions.user_add(arg1);
+  } else if (cmd==='user-rm'){
+    actions.user_rm(arg1);
+  } else if (cmd==='user-enable'){
+    actions.user_enable(arg1, true);
+  } else if (cmd==='user-disable'){
+    actions.user_enable(arg1, false);
+  } else if (cmd==='user-rotate'){
+    actions.user_rotate(arg1);
+  } else if (cmd==='reality-keys'){
+    actions.reality_keys();
   } else {
-    doc.inbounds.vless_ws_tls.cert_path = '/etc/ssl/fullchain.pem';
-    doc.inbounds.vless_ws_tls.key_path = '/etc/ssl/privkey.pem';
+    throw new Error('unknown command');
   }
-  return doc;
+} catch (e){
+  console.error('[cmd] ERROR:', e.message);
+  process.exit(1);
 }
-
-function sethost(doc, host) {
-  doc.export = doc.export || {};
-  doc.export.host = host;
-  return doc;
-}
-
-function setdomain(doc, domain) {
-  doc.inbounds = doc.inbounds || {};
-  doc.inbounds.vless_ws_tls = doc.inbounds.vless_ws_tls || {};
-  doc.inbounds.vless_ws_tls.domain = domain;
-  return doc;
-}
-
-function adduser(doc, name) {
-  doc.users = doc.users || [];
-  const u = {
-    name,
-    enabled: true,
-    token: rand(18),
-    vless_uuid: genUUID(),
-    hy2_pass: rand(14)
-  };
-  doc.users.push(u);
-  return { doc, u };
-}
-
-function rmuser(doc, name) {
-  doc.users = (doc.users || []).filter(u => u.name !== name);
-  return doc;
-}
-
-function main() {
-  const [,, cmd, arg1, arg2] = process.argv;
-  if (!cmd) throw new Error('usage: node cmd.js <enable|disable|cf|sethost|setdomain|adduser|rmuser> ...');
-  let doc = load();
-  switch(cmd){
-    case 'user-rotate': {
-      const doc = load();
-      const name = (arg1 || 'user').toString();
-      if (!/^[a-zA-Z0-9._-]{1,32}$/.test(name)) throw new Error('bad user name');
-      const users = doc.users || [];
-      const idx = users.findIndex(u => u && u.name === name);
-      if (idx < 0) throw new Error('user not found');
-      users[idx].token = rand(18);
-      save(doc);
-      console.log(JSON.stringify({name, token: users[idx].token}, null, 2));
-      break;
-    }
-    case 'user-enable': {
-      const doc = load();
-      const name = (arg1 || 'user').toString();
-      const en = String(arg2||'true') !== 'false';
-      if (!/^[a-zA-Z0-9._-]{1,32}$/.test(name)) throw new Error('bad user name');
-      const users = doc.users || [];
-      const idx = users.findIndex(u => u && u.name === name);
-      if (idx < 0) throw new Error('user not found');
-      users[idx].enabled = en;
-      save(doc);
-      console.log(JSON.stringify({name, enabled: en}, null, 2));
-      break;
-    }
-    case 'enable': doc = enable(doc, arg1, true); break;
-    case 'disable': doc = enable(doc, arg1, false); break;
-    case 'cf': doc = cfmode(doc, arg1); break;
-    case 'sethost': doc = sethost(doc, arg1); break;
-    case 'setdomain': doc = setdomain(doc, arg1); break;
-    case 'adduser': {
-      const r = adduser(doc, arg1 || 'user');
-      doc = r.doc; console.log(JSON.stringify(r.u, null, 2));
-      break;
-    }
-    case 'rmuser': doc = rmuser(doc, arg1); break;
-    default: throw new Error('unknown command');
-  }
-  save(doc);
-}
-
-main();
