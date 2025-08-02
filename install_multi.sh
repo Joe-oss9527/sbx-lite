@@ -20,22 +20,30 @@
 set -euo pipefail
 
 # ------------------ Configurable defaults ------------------
+# Path to sing-box binary
 SB_BIN="/usr/local/bin/sing-box"
+# Config dir/file
 SB_CONF_DIR="/etc/sing-box"
 SB_CONF="$SB_CONF_DIR/config.json"
+# systemd unit file
 SB_SVC="/etc/systemd/system/sing-box.service"
 
-DOMAIN="${DOMAIN:-}"               # required: your domain (DNS only / gray-cloud)
-CERT_MODE="${CERT_MODE:-}"         # cf_dns | le_http | "" (no ACME)
-CF_Token="${CF_Token:-}"           # for cf_dns (scoped token; not persisted)
-CF_Zone_ID="${CF_Zone_ID:-}"       # optional for dns_cf
-CF_Account_ID="${CF_Account_ID:-}" # optional for dns_cf
+# Required: your domain (DNS only / gray-cloud)
+DOMAIN="${DOMAIN:-}"
+# ACME mode: cf_dns | le_http | "" (no ACME)
+CERT_MODE="${CERT_MODE:-}"
+# For cf_dns (scoped token; not persisted)
+CF_Token="${CF_Token:-}"
+# Optional for dns_cf
+CF_Zone_ID="${CF_Zone_ID:-}"
+# Optional for dns_cf
+CF_Account_ID="${CF_Account_ID:-}"
 
-# If you already have certs, set BOTH to enable WS/Hy2 without ACME:
+# If you already have certs, set BOTH to enable WS/Hy2 without ACME
 CERT_FULLCHAIN="${CERT_FULLCHAIN:-}"
 CERT_KEY="${CERT_KEY:-}"
 
-# Ports (can be overridden by env); will auto-fallback if occupied
+# Default ports; will auto-fallback if occupied
 REALITY_PORT="${REALITY_PORT:-443}"
 WS_PORT="${WS_PORT:-8444}"
 HY2_PORT="${HY2_PORT:-8443}"
@@ -56,8 +64,12 @@ SINGBOX_VERSION="${SINGBOX_VERSION:-}"
 # -----------------------------------------------------------
 
 # --------------- Styling & small helpers -------------------
-B="$(tput bold 2>/dev/null || true)"; N="$(tput sgr0 2>/dev/null || true)"
-G="$(tput setaf 2 2>/dev/null || true)"; Y="$(tput setaf 3 2>/dev/null || true)"; R="$(tput setaf 1 2>/dev/null || true)"
+B="$(tput bold 2>/dev/null || true)"
+N="$(tput sgr0 2>/dev/null || true)"
+G="$(tput setaf 2 2>/dev/null || true)"
+Y="$(tput setaf 3 2>/dev/null || true)"
+R="$(tput setaf 1 2>/dev/null || true)"
+
 msg(){ echo "${G}[*]${N} $*"; }
 warn(){ echo "${Y}[!]${N} $*" >&2; }
 err(){ echo "${R}[ERR]${N} $*" >&2; }
@@ -67,8 +79,8 @@ have(){ command -v "$1" >/dev/null 2>&1; }
 
 port_in_use() {
   local p="$1"
-  ss -lntp 2>/dev/null | grep -q ":$p\\b" && return 0
-  lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null | grep -q ":$p\\b" && return 0
+  ss -lntp 2>/dev/null | grep -q ":$p " && return 0
+  lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null | grep -q ":$p" && return 0
   return 1
 }
 # -----------------------------------------------------------
@@ -95,7 +107,6 @@ detect_arch() {
   esac
 }
 
-# Build a fallback asset URL if the API asset lookup fails.
 build_asset_url_fallback() {
   local tag="$1" arch="$2"
   local ver="${tag#v}"
@@ -103,12 +114,15 @@ build_asset_url_fallback() {
 }
 
 download_singbox() {
-  if [[ -x "$SB_BIN" ]]; then msg "sing-box exists at $SB_BIN"; return; fi
-  local arch; arch="$(detect_arch)"
-  local tmp; tmp="$(mktemp -d)"
+  if [[ -x "$SB_BIN" ]]; then
+    msg "sing-box exists at $SB_BIN"
+    return
+  fi
+  local arch tmp api url tag raw
+  arch="$(detect_arch)"
+  tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
 
-  local api url tag raw
   if [[ -n "$SINGBOX_VERSION" ]]; then
     tag="$SINGBOX_VERSION"
     api="https://api.github.com/repos/SagerNet/sing-box/releases/tags/${tag}"
@@ -152,16 +166,16 @@ acme_install() {
   else
     wget -qO- https://get.acme.sh | sh -s email=admin@"${DOMAIN#*.}" >/dev/null
   fi
-  # shellcheck disable=SC1090
   . "$HOME/.acme.sh/acme.sh.env"
 }
 
 acme_issue_cf_dns() {
-  [[ -n "${CF_Token:-}" ]] || die "CF_Token is required for CERT_MODE=cf_dns"
+  [[ -n "$CF_Token" ]] || die "CF_Token is required for CERT_MODE=cf_dns"
   export CF_Token CF_Zone_ID CF_Account_ID
   local ac="$HOME/.acme.sh/acme.sh"
   "$ac" --issue -d "$DOMAIN" --dns dns_cf -k ec-256 --server letsencrypt
-  local dir="$CERT_DIR_BASE/$DOMAIN"; mkdir -p "$dir"
+  local dir="$CERT_DIR_BASE/$DOMAIN"
+  mkdir -p "$dir"
   "$ac" --install-cert -d "$DOMAIN" --ecc \
     --fullchain-file "$dir/fullchain.pem" \
     --key-file "$dir/privkey.pem"
@@ -173,7 +187,8 @@ acme_issue_le_http() {
   port_in_use 80 && die ":80 is in use; stop it or use CERT_MODE=cf_dns"
   local ac="$HOME/.acme.sh/acme.sh"
   "$ac" --issue -d "$DOMAIN" --standalone -k ec-256 --server letsencrypt
-  local dir="$CERT_DIR_BASE/$DOMAIN"; mkdir -p "$dir"
+  local dir="$CERT_DIR_BASE/$DOMAIN"
+  mkdir -p "$dir"
   "$ac" --install-cert -d "$DOMAIN" --ecc \
     --fullchain-file "$dir/fullchain.pem" \
     --key-file "$dir/privkey.pem"
@@ -182,14 +197,11 @@ acme_issue_le_http() {
 }
 
 maybe_issue_cert() {
-  # FIX: 先识别“已提供证书”，即使 CERT_MODE 为空也启用
+  [[ -n "$CERT_MODE" ]] || return 0
   if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" && -f "$CERT_FULLCHAIN" && -f "$CERT_KEY" ]]; then
     msg "Using provided certificate paths."
     return 0
   fi
-
-  # 需要 ACME 时再执行
-  [[ -n "$CERT_MODE" ]] || return 0
   acme_install
   case "$CERT_MODE" in
     cf_dns)  acme_issue_cf_dns ;;
@@ -201,8 +213,14 @@ maybe_issue_cert() {
 # -----------------------------------------------------------
 
 # ---------------- Materials & config -----------------------
-UUID=""; PRIV=""; PUB=""; SID=""; HY2_PASS=""
-REALITY_PORT_CHOSEN=""; WS_PORT_CHOSEN=""; HY2_PORT_CHOSEN=""
+UUID=""
+PRIV=""
+PUB=""
+SID=""
+HY2_PASS=""
+REALITY_PORT_CHOSEN=""
+WS_PORT_CHOSEN=""
+HY2_PORT_CHOSEN=""
 
 gen_materials() {
   [[ -n "$DOMAIN" ]] || read -rp "Enter your domain (DNS only / gray cloud): " DOMAIN
@@ -245,7 +263,6 @@ write_config() {
     local added=0
     add_comma(){ if [[ $added -eq 1 ]]; then echo ','; fi; added=1; }
 
-    # VLESS-REALITY (no cert required)
     add_comma
     cat <<EOF
       {
@@ -270,7 +287,6 @@ write_config() {
       }
 EOF
 
-    # VLESS-WS-TLS (enable when cert exists)
     if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" && -f "$CERT_FULLCHAIN" && -f "$CERT_KEY" ]]; then
       add_comma
       cat <<EOF
@@ -292,7 +308,6 @@ EOF
       }
 EOF
 
-      # Hysteria2 (enable when cert exists)
       add_comma
       cat <<EOF
       {
@@ -337,23 +352,24 @@ LimitNOFILE=1048576
 WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
-  /usr/local/bin/sing-box check -c /etc/sing-box/config.json
+  "$SB_BIN" check -c "$SB_CONF"
   systemctl enable --now sing-box
 }
 
 open_firewall() {
-  have ufw || return 0
-  ufw allow "${REALITY_PORT_CHOSEN}/tcp" || true
-  if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" ]]; then
-    ufw allow "${WS_PORT_CHOSEN}/tcp" || true
-    ufw allow "${HY2_PORT_CHOSEN}/udp" || true
+  if have ufw; then
+    ufw allow "${REALITY_PORT_CHOSEN}/tcp" || true
+    if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" ]]; then
+      ufw allow "${WS_PORT_CHOSEN}/tcp" || true
+      ufw allow "${HY2_PORT_CHOSEN}/udp" || true
+    fi
   fi
 }
 
 print_summary() {
   echo
   echo "${B}=== sing-box Installed (official) ===${N}"
-  echo "Domain    : ${DOMAIN}   (DNS only / 灰云)"
+  echo "Domain    : ${DOMAIN}"
   echo "Binary    : $SB_BIN"
   echo "Config    : $SB_CONF"
   echo "Service   : systemctl status sing-box"
@@ -377,7 +393,7 @@ print_summary() {
     echo "  URI      = ${uri_hy2}"
   fi
   echo
-  echo "${Y}Notes${N}: Reality/Hy2 需灰云；WS-TLS 可灰/橙云。DNS-01 推荐；HTTP-01 需 :80 可达且未被占用。"
+  echo "${Y}Notes${N}: Reality/Hy2 建议灰云；WS-TLS 可灰/橙云。DNS-01 推荐；HTTP-01 需 :80 可达且未被占用。"
 }
 
 install_flow() {
@@ -386,8 +402,7 @@ install_flow() {
   ensure_tools
   download_singbox
   gen_materials
-  # 如提供证书或指定 ACME，处理证书
-  if [[ -n "$CERT_MODE" || ( -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" ) ]]; then
+  if [[ -n "${CERT_MODE:-}" || ( -n "${CERT_FULLCHAIN:-}" && -n "${CERT_KEY:-}" ) ]]; then
     maybe_issue_cert
   fi
   write_config
@@ -403,7 +418,8 @@ uninstall_flow() {
     [[ "${a:-N}" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 0; }
   fi
   systemctl disable --now sing-box 2>/dev/null || true
-  rm -f "$SB_SVC"; systemctl daemon-reload || true
+  rm -f "$SB_SVC"
+  systemctl daemon-reload || true
   rm -f "$SB_BIN"
   rm -rf "$SB_CONF_DIR"
   msg "Uninstalled."
