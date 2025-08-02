@@ -42,6 +42,17 @@
 
 ---
 
+## 一键安装（推荐）
+
+## 一键安装（推荐）
+支持 curl 和 wget：
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/quick.sh)
+# 或
+bash <(wget -qO- https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/quick.sh)
+```
+> 环境变量：`SBX_REPO` 指定仓库（默认 `YYvanYang/sbx-lite`），`SBX_BRANCH` 指定分支（默认 `main`）。
+
 ## 快速开始
 > 需要 root；建议 Debian/Ubuntu。`sing-box` 需为**带 ACME 能力**的构建（若无 ACME，也可先用证书文件）。
 
