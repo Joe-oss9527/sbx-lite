@@ -3,12 +3,12 @@
 一个围绕 **sing-box** 的轻量部署与管理工具：**默认 REALITY**，可选 **VLESS WS+TLS**、**Hysteria2**，带本地 **面板 + CLI**、订阅生成、健康体检与**内置 ACME 自动签发**支持。
 
 > 面板默认仅监听 127.0.0.1:7789（Basic Auth），请通过 **SSH 隧道**访问：
-> 
+>
 > ```bash
 > ssh -N -L 7789:127.0.0.1:7789 root@your-server
 > ```
-> 
-> 将 `your-server` 替换为 **你的服务器公网 IP 或域名**（例如 `root@203.0.113.10` 或 `root@sbx.example.com`）。
+>
+> 将 `your-server` 替换为 **你的服务器公网 IP 或域名**（如 `root@203.0.113.10` / `root@sbx.example.com`）。
 
 ---
 
@@ -25,17 +25,6 @@ bash <(wget -qO- https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/quick
 - 面板：`http://127.0.0.1:7789/`（首页显示 admin 密码）
 - 服务：`systemctl status sing-box` / `systemctl status sbx-panel`
 
-首配建议：
-```bash
-sudo sbxctl sethost-auto            # 自动探测出口 IP（或改成你的域名）
-sudo sbxctl cf proxied|direct       # Cloudflare 橙云/直连模式
-sudo sbxctl enable reality          # 默认推荐 Reality
-sudo sbxctl disable ws
-sudo sbxctl disable hy2
-sudo sbxctl apply
-sudo sbx-diagnose
-```
-
 ---
 
 ## 首次使用（按场景）
@@ -46,7 +35,7 @@ sudo sbx-diagnose
 ```bash
 sudo sbxctl sethost-auto          # 或：sudo sbxctl sethost your.domain.com
 sudo sbxctl reality-keys          # 生成 Reality 私钥/公钥
-# 打开 /etc/sbx/sbx.yml，设置 reality.short_id 为 1~8 位十六进制（例：ab12cd34）
+# 打开 /etc/sbx/sbx.yml，把 reality.short_id 设置为 1~8 位十六进制（例：ab12cd34）
 sudo sbxctl apply
 sudo sbx-diagnose
 ```
@@ -70,49 +59,6 @@ sudo sbxctl sethost your.domain.com
 sudo sbxctl apply
 sudo sbx-diagnose
 ```
-
-
-### 离线安装（可选）
-> 仅在无法访问 GitHub Raw 时使用。
-```bash
-unzip sbx-lite-optimized.zip
-cd sbx-lite-optimized
-sudo ./scripts/install.sh
-```
-
----
-
-## 目录
-- [特性一览](#特性一览)
-- [目录结构与路径](#目录结构与路径)
-- [配置说明（/etc/sbx/sbx.yml）](#配置说明etscsbxsbxyml)
-  - [全局导出字段](#全局导出字段)
-  - [用户管理](#用户管理)
-  - [Reality（VLESS+XTLS-Vision+REALITY）](#realityvlessxtls-visionreality)
-  - [VLESS WS+TLS（支持 ACME）](#vless-wstls支持-acme)
-  - [Hysteria2（支持 ACME）](#hysteria2支持-acme)
-  - [Cloudflare 模式](#cloudflare-模式)
-- [应用配置与体检](#应用配置与体检)
-- [订阅与客户端适配](#订阅与客户端适配)
-- [常见操作（CLI）](#常见操作cli)
-- [故障处理与排错](#故障处理与排错)
-- [安全建议](#安全建议)
-- [升级卸载](#升级卸载)
-- [FAQ](#faq)
-- [致谢与许可](#致谢与许可)
-
----
-
-## 特性一览
-- ✅ **内置 ACME**：WS-TLS 与 Hy2 支持 ACME（Let’s Encrypt/ZeroSSL/自定义），可选 **DNS-01（Cloudflare/...）**；支持 `alternative_http_port/alternative_tls_port`。
-- ✅ **端口冲突保护**：阻止 Reality 与 WS 绑定同一端口（默认 443）。
-- ✅ **Hy2 吞吐可空**：`up_mbps/down_mbps` 允许留空，走服务端默认（便于 BBR/Brutal）。
-- ✅ **面板 + CLI**：统一编辑 `/etc/sbx/sbx.yml`，一键 `apply → check → restart`。
-- ✅ **订阅生成**：Shadowrocket / sing-box / Clash（精简 & Full 模板）。
-- ✅ **诊断脚本**：关键项检查 + 修复建议。
-- ✅ **安全默认值**：面板仅本地监听、订阅 Token、TLS 校验默认开启。
-
-> **聚焦现代协议**：Reality（默认）、WS+TLS、Hysteria2。其余协议暂不内置。
 
 ---
 

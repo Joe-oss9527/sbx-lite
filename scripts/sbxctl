@@ -3,7 +3,6 @@ set -euo pipefail
 
 ROOT=/opt/sbx
 PANEL=$ROOT/panel
-CONF_YML=/etc/sbx/sbx.yml
 
 usage() {
 cat <<'EOF'
@@ -50,16 +49,14 @@ case "$cmd" in
       ws) node "$PANEL/cmd.js" enable vless_ws_tls ;;
       hy2) node "$PANEL/cmd.js" enable hysteria2 ;;
       *) usage; exit 1;;
-    esac
-    ;;
+    esac ;;
   disable)
     case "$arg1" in
       reality) node "$PANEL/cmd.js" disable reality ;;
       ws) node "$PANEL/cmd.js" disable vless_ws_tls ;;
       hy2) node "$PANEL/cmd.js" disable hysteria2 ;;
       *) usage; exit 1;;
-    esac
-    ;;
+    esac ;;
   user-add) node "$PANEL/cmd.js" user-add "${arg1:?name required}" ;;
   user-rm) node "$PANEL/cmd.js" user-rm "${arg1:?name required}" ;;
   user-enable) node "$PANEL/cmd.js" user-enable "${arg1:?name required}" ;;

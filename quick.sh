@@ -38,6 +38,7 @@ fi
 INSTALLER="$TMP/src/scripts/install.sh"
 [ -f "$INSTALLER" ] || err "installer not found: scripts/install.sh (please ensure it exists in the repo)"
 
+cd "$TMP/src"
 log "running installer: $INSTALLER"
 bash "$INSTALLER"
 log "done."
