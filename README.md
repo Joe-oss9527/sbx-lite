@@ -1,9 +1,39 @@
 # sbx-lite
 
-**sbx-lite** 是一个面向个人/小团队的 **sing-box** 轻量化部署与管理工具，主打：**稳定、可维护、默认安全**。
-支持 **VLESS-REALITY**（默认）、**VLESS-WS-TLS**（可走 CDN 兜底）、**Hysteria2（Hy2）**，并带有**本地面板**、**一键诊断**、\*\*订阅自动生成（含 Mihomo/Clash 完整模板）\*\*等能力。
+**sbx-lite** 是一个面向个人/小团队的 **sing-box** 轻量化部署与管理工具，主打：**稳定、可维护、默认安全**。  
+支持 **VLESS-REALITY**（默认）、**VLESS-WS-TLS**（可走 CDN 兜底）、**Hysteria2（Hy2）**。内置**本地面板**、**一键诊断**、**订阅自动生成（含 Mihomo/Clash 完整模板）** 等能力。
 
 > 面板默认只绑定 **127.0.0.1**，**请通过 SSH 隧道**访问；除非你非常清楚地配置了反向代理与加固策略。
+
+---
+
+## 一键安装
+
+> 默认安装 **main** 分支。如要指定版本（例如 `v20`），设置 `SBX_VERSION` 环境变量。
+
+**curl：**
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/quick.sh)
+````
+
+**wget：**
+
+```bash
+bash <(wget -qO- https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/quick.sh)
+```
+
+**可选参数：**
+
+* 指定版本安装：
+
+  ```bash
+  SBX_VERSION=v20 bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/quick.sh)
+  ```
+* 首次无证书时跳过安装末尾的冒烟测试：
+
+  ```bash
+  SKIP_SMOKE=1 bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/quick.sh)
+  ```
 
 ---
 
@@ -65,22 +95,17 @@
 ## 快速开始
 
 ```bash
-# 1) 安装
-unzip sbx-lite-v20.zip
-cd sbx-lite
-sudo ./install.sh              # 若暂时无证书，可 SKIP_SMOKE=1 ./install.sh
-
-# 2) 基本设置（导出 host、Cloudflare 模式与域名）
+# 1) 基本设置（导出 host、Cloudflare 模式与域名）
 sudo /opt/sbx/scripts/sbxctl sethost           # 可无参→自动探测公网IP
 sudo /opt/sbx/scripts/sbxctl cf proxied        # 橙云（CDN）或 direct（灰云）
 sudo /opt/sbx/scripts/sbxctl setdomain your.domain
 
-# 3) 协议（默认开启 REALITY）
+# 2) 协议（默认开启 REALITY）
 sudo /opt/sbx/scripts/sbxctl enable reality
 sudo /opt/sbx/scripts/sbxctl disable ws
 sudo /opt/sbx/scripts/sbxctl disable hy2
 
-# 4) 应用并诊断
+# 3) 应用并诊断
 sudo /opt/sbx/scripts/sbxctl apply
 sudo /opt/sbx/scripts/diagnose.sh
 ```
@@ -115,11 +140,6 @@ users:                      # 至少1个 enabled:true 用户（安装时会创�
     token: "..."            # [必需, 自动生成] 订阅鉴权
     vless_uuid: "..."       # [必需, 自动生成] VLESS/REALITY/WS-TLS
     hy2_pass: "..."         # [必需]* 启用Hy2时必需（自动生成）
-  - name: "laptop"
-    enabled: true
-    token: "..."
-    vless_uuid: "..."
-    hy2_pass: "..."
 
 inbounds:
   reality:
@@ -127,7 +147,7 @@ inbounds:
     listen_port: 443              # [可选]
     server_name: "www.cloudflare.com"  # [必需] 握手SNI
     private_key: "..."            # [自动生成]
-    public_key: "..."             # [可选]* 客户端必需；请填写（诊断会检查）
+    public_key: "..."             # [建议填写]* 客户端订阅需要（诊断会检查）
     short_id: "..."               # [自动生成]
 
   vless_ws_tls:
@@ -166,7 +186,7 @@ inbounds:
 
 ### VLESS-WS-TLS（可选，CDN 兜底）
 
-* **橙云（proxied）**：用 **Cloudflare Origin Cert**（放置到 `/etc/ssl/cf/*`，用 `cf_origin_helper.sh` 助手）。
+* **橙云（proxied）**：用 **Cloudflare Origin Cert**（放置到 `/etc/ssl/cf/*`，可用 `cf_origin_helper.sh`）。
 * **灰云（direct）**：用公认证书 `/etc/ssl/fullchain.pem + /etc/ssl/privkey.pem`。
 * 订阅会填 `security=tls&sni&host&path&encryption=none`。
 
@@ -174,7 +194,7 @@ inbounds:
 
 * **必须** TLS：`hysteria2.tls.certificate_path/key_path` 或 `acme`。无证书 → **生成器拒绝**。
 * 用户密码优先使用每用户 `hy2_pass`，否则退回 `global_password`。
-* 提供 CLI/面板向导：`hy2_wizard.sh` / “Hy2 证书向导”卡片。
+* 提供 CLI/面板向导：`hy2_wizard.sh` / “Hy2 证书向导”。
 
 ---
 
@@ -186,7 +206,7 @@ inbounds:
 http://127.0.0.1:7789/sub/<TOKEN>?format=<shadowrocket|singbox|clash|clash_full>
 ```
 
-* `shadowrocket`：VLESS-REALITY/WS、Hy2 URI（参数完整，含 flow/security/sni 等）
+* `shadowrocket`：VLESS-REALITY / VLESS-WS-TLS / Hy2 URI（参数完整，含 flow/security/sni 等）
 * `singbox`：原生 JSON
 * `clash`：`proxies + proxy-groups`（含 `🟢 Auto(url-test)` / `🔀 Select`）
 * `clash_full`：**完整模板**（`proxies + proxy-groups + rule-providers + rules + DNS`）
@@ -200,11 +220,11 @@ http://127.0.0.1:7789/sub/<TOKEN>?format=<shadowrocket|singbox|clash|clash_full>
   * `auto, cloudflare → https://cp.cloudflare.com/generate_204`
   * `auto, global → https://www.gstatic.com/generate_204`
 
-**clash\_full 的 DNS 段（要点）**
+**DNS（clash\_full 要点）**
 
-* `enhanced-mode: fake-ip`，`listen: 127.0.0.1:1053`（避免冲突与暴露）
+* `enhanced-mode: fake-ip`，`listen: 127.0.0.1:1053`
 * `nameserver-policy`：`geosite:cn` 走本地 DNS；`geosite:geolocation-!cn` 走 DoH
-* `fallback-filter`: 基于 `geoip CN` 与常见外网域名，提高返回结果稳定性
+* `fallback-filter`: 基于 `geoip CN` 与常见外网域名，提高返回稳定性
 
 > `geosite:*` 依赖客户端 geodata（Mihomo/Clash Meta 会自动下载）。
 
@@ -214,7 +234,7 @@ http://127.0.0.1:7789/sub/<TOKEN>?format=<shadowrocket|singbox|clash|clash_full>
 
 ### 面板（默认仅 127.0.0.1）
 
-* **Checklist**：检测 `export.host`、用户、Reality SNI、公钥、WS 域名/证书、Hy2 密码/证书等 → 一键修复
+* **Checklist**：检测 `export.host`、用户、Reality SNI/公钥、WS 域名/证书、Hy2 密码/证书等 → 一键修复
 * **Users**：新增/删除、启用/禁用、**Rotate token**、复制订阅、**二维码显示+PNG 下载**
 * **Health**：`sing-box check`、服务状态、监听端口、Hy2 证书到期/签发者摘要
 * **Hy2 证书向导**：检查/保存证书路径（配合 `hy2_wizard.sh`）
@@ -292,8 +312,8 @@ A：项目默认 `127.0.0.1:1053`；如仍冲突，可在客户端侧改为其�
 
 ## 变更记录（摘要）
 
-* **v14–v16**：`clash_full` 模板（规则/分组/DNS/分流）、模板下拉、订阅二维码/PNG 下载
-* **v17**：测速 URL 自定义与地区自适应、深色主题、用户搜索
-* **v18**：生成器重写（Hy2 强制 TLS、Reality/WS 校验）、Shadowrocket URI 完整化、诊断增强、安装冒烟
-* **v19**：Hy2 证书向导（CLI + 面板）、Health 体检页
-* **v20**：更安全的 `/api/fix`（spawn + 校验）、Reality 公钥缺失告警、DNS 监听改回环、安装可跳过冒烟
+* v14–v16：`clash_full` 模板（规则/分组/DNS/分流）、模板下拉、订阅二维码/PNG 下载
+* v17：测速 URL 自定义与地区自适应、深色主题、用户搜索
+* v18：生成器重写（Hy2 强制 TLS、Reality/WS 校验）、Shadowrocket URI 完整化、诊断增强、安装冒烟
+* v19：Hy2 证书向导（CLI + 面板）、Health 体检页
+* v20：更安全的 `/api/fix`（spawn + 校验）、Reality 公钥缺失告警、DNS 监听改回环、安装可跳过冒烟
