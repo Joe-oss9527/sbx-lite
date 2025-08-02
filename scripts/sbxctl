@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+validate_name() {
+  local name="$1"
+  [[ "$name" =~ ^[a-zA-Z0-9._-]{1,32}$ ]]
+}
+
+CMD="${1:-}"
+
+apply_restart() {
+  node /opt/sbx/panel/gen-config.js
+  sing-box check -c /etc/sing-box/config.json
+  systemctl restart sing-box
+  systemctl status --no-pager sing-box | sed -n '1,10p' || true
+}
+
+case "$CMD" in
+  uuid) sing-box generate uuid ;;
+  reality) sing-box generate reality-keypair ;;
+  shortid) sing-box generate rand 8 --hex ;;
+  apply) apply_restart ;;
+  enable)
+    KEY="${2:-}"
+    [[ -z "$KEY" ]] && { echo "Usage: sbxctl enable {reality|ws|hy2}"; exit 1; }
+    node /opt/sbx/panel/cmd.js enable "$KEY"
+    apply_restart
+    ;;
+  disable)
+    KEY="${2:-}"
+    [[ -z "$KEY" ]] && { echo "Usage: sbxctl disable {reality|ws|hy2}"; exit 1; }
+    node /opt/sbx/panel/cmd.js disable "$KEY"
+    apply_restart
+    ;;
+  cf)
+    MODE="${2:-}"
+    [[ -z "$MODE" ]] && { echo "Usage: sbxctl cf {proxied|direct}"; exit 1; }
+    node /opt/sbx/panel/cmd.js cf "$MODE"
+    echo "Set cloudflare_mode=$MODE and adjusted cert paths."
+    ;;
+  sethost)
+    HOST="${2:-}"
+    if [[ -z "$HOST" ]]; then
+      HOST="$(curl -4 -fsS ifconfig.co || curl -4 -fsS api.ipify.org || true)"
+      if [[ -z "$HOST" ]]; then echo "Usage: sbxctl sethost <host_or_ip>"; exit 1; fi
+    fi
+    node /opt/sbx/panel/cmd.js sethost "$HOST"
+    echo "export.host=$HOST"
+    ;;
+  setdomain)
+    DOMAIN="${2:-}"
+    [[ -z "$DOMAIN" ]] && { echo "Usage: sbxctl setdomain <domain>"; exit 1; }
+    node /opt/sbx/panel/cmd.js setdomain "$DOMAIN"
+    echo "vless_ws_tls.domain=$DOMAIN"
+    ;;
+  adduser)
+    NAME="${2:-user}"
+    if ! validate_name "$NAME"; then echo "Invalid name. Use [a-zA-Z0-9._-], length<=32." >&2; exit 1; fi
+    node /opt/sbx/panel/cmd.js adduser "$NAME"
+    apply_restart
+    ;;
+  rmuser)
+    NAME="${2:-}"
+    if [[ -z "$NAME" ]] || ! validate_name "$NAME"; then echo "Usage: sbxctl rmuser <name>  (name: [a-zA-Z0-9._-]{1,32})" >&2; exit 1; fi
+    node /opt/sbx/panel/cmd.js rmuser "$NAME"
+    apply_restart
+    ;;
+  *)
+    cat <<EOF
+Usage: sbxctl <command>
+  uuid|reality|shortid
+  apply
+  enable {reality|ws|hy2}
+  disable {reality|ws|hy2}
+  cf {proxied|direct}
+  sethost [host_or_ip]
+  setdomain <domain>
+  adduser <name>
+  rmuser <name>
+  user-rotate <name>
+  user-enable <name>
+  user-disable <name>
+  doctor
+EOF
+    exit 1
+    ;;
+esac

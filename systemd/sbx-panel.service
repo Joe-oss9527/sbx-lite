@@ -1,0 +1,15 @@
+[Unit]
+Description=sbx-lite panel
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/sbx/panel.env
+ExecStart=/usr/bin/node /opt/sbx/panel/server.js
+WorkingDirectory=/opt/sbx/panel
+Restart=on-failure
+Environment=SBX_BIND=127.0.0.1
+Environment=SBX_PORT=7789
+
+[Install]
+WantedBy=multi-user.target
