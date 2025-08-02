@@ -25,14 +25,11 @@ SB_CONF_DIR="/etc/sing-box"
 SB_CONF="$SB_CONF_DIR/config.json"
 SB_SVC="/etc/systemd/system/sing-box.service"
 
-# Required env for install: DOMAIN=your.graycloud.domain
-DOMAIN="${DOMAIN:-}"
-
-# Optional ACME settings
-CERT_MODE="${CERT_MODE:-}"          # cf_dns | le_http | "" (no ACME)
-CF_Token="${CF_Token:-}"            # for cf_dns (scoped token; not persisted)
-CF_Zone_ID="${CF_Zone_ID:-}"        # optional for dns_cf
-CF_Account_ID="${CF_Account_ID:-}"  # optional for dns_cf
+DOMAIN="${DOMAIN:-}"              # required: your domain (DNS only / gray-cloud)
+CERT_MODE="${CERT_MODE:-}"        # cf_dns | le_http | "" (no ACME)
+CF_Token="${CF_Token:-}"          # for cf_dns (scoped token; not persisted)
+CF_Zone_ID="${CF_Zone_ID:-}"      # optional for dns_cf
+CF_Account_ID="${CF_Account_ID:-}"# optional for dns_cf
 
 # If you already have certs, set BOTH to enable WS/Hy2 without ACME:
 CERT_FULLCHAIN="${CERT_FULLCHAIN:-}"
@@ -54,8 +51,8 @@ SNI_DEFAULT="${SNI_DEFAULT:-www.cloudflare.com}"
 # Certificate install target if ACME is used
 CERT_DIR_BASE="${CERT_DIR_BASE:-/etc/ssl/sbx}"
 
-# Allow pinning a specific sing-box version by tag (e.g., v1.9.4)
-SINGBOX_VERSION="${SINGBOX_VERSION:-}"  # empty => latest from GitHub API
+# Allow pinning a specific sing-box version by tag (e.g., v1.9.5); empty => latest
+SINGBOX_VERSION="${SINGBOX_VERSION:-}"
 # -----------------------------------------------------------
 
 # --------------- Styling & small helpers -------------------
@@ -98,32 +95,53 @@ detect_arch() {
   esac
 }
 
+# Build a fallback asset URL if the API asset lookup fails.
+build_asset_url_fallback() {
+  local tag="$1" arch="$2"
+  # Release assets are typically named: sing-box-<version>-linux-amd64.tar.gz
+  local ver="${tag#v}"
+  echo "https://github.com/SagerNet/sing-box/releases/download/${tag}/sing-box-${ver}-${arch}.tar.gz"
+}
+
 download_singbox() {
   if [[ -x "$SB_BIN" ]]; then msg "sing-box exists at $SB_BIN"; return; fi
   local arch="$(detect_arch)"
   local tmp; tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' RETURN
 
-  local url=""
+  local api url tag raw
   if [[ -n "$SINGBOX_VERSION" ]]; then
-    # use pinned version
-    url="https://codeload.github.com/SagerNet/sing-box/tar.gz/refs/tags/${SINGBOX_VERSION}"
+    tag="$SINGBOX_VERSION"
+    api="https://api.github.com/repos/SagerNet/sing-box/releases/tags/${tag}"
   else
-    # fetch latest via GitHub API
-    msg "Fetching latest sing-box for $arch ..."
-    local api="https://api.github.com/repos/SagerNet/sing-box/releases/latest"
-    local raw
-    if have curl; then raw="$(curl -fsSL "$api")"; else raw="$(wget -qO- "$api")"; fi
-    url="$(printf '%s' "$raw" | jq -r --arg a "$arch" '.assets[] | select(.name|test($a)) | .browser_download_url' | head -1)"
-    [[ -n "$url" && "$url" != "null" ]] || die "Release asset not found for $arch"
+    api="https://api.github.com/repos/SagerNet/sing-box/releases/latest"
   fi
 
+  msg "Fetching sing-box release info for $arch ..."
+  if have curl; then raw="$(curl -fsSL "$api")"; else raw="$(wget -qO- "$api")"; fi
+  [[ -n "${raw:-}" ]] || die "Failed to query GitHub API."
+
+  # If latest, get tag_name for logging.
+  if [[ -z "$SINGBOX_VERSION" ]]; then
+    tag="$(printf '%s' "$raw" | jq -r .tag_name)"
+  fi
+
+  # Pick the asset matching our arch.
+  url="$(printf '%s' "$raw" | jq -r --arg a "$arch" '.assets[]? | select(.name|test($a) and endswith(".tar.gz")) | .browser_download_url' | head -1)"
+  if [[ -z "$url" || "$url" == "null" ]]; then
+    warn "Asset not found in API; falling back to guessed URL pattern."
+    url="$(build_asset_url_fallback "$tag" "$arch")"
+  fi
+
+  msg "Downloading sing-box package (${tag:-unknown}) ..."
   local pkg="$tmp/sb.tgz"
-  msg "Downloading sing-box package ..."
   if have curl; then curl -fsSL "$url" -o "$pkg"; else wget -qO "$pkg" "$url"; fi
+
+  # Extract (fixed: do NOT duplicate -f)
   tar -xzf "$pkg" -C "$tmp"
 
-  local top; top="$(tar -tzf "$pkg" | head -1 | cut -d/ -f1)"
-  local bin; bin="$(find "$tmp/$top" -type f -name 'sing-box' | head -1)"
+  # Find the binary
+  local bin
+  bin="$(find "$tmp" -type f -name 'sing-box' | head -1)"
   [[ -n "$bin" ]] || die "sing-box binary not found in package"
   install -m 0755 "$bin" "$SB_BIN"
   msg "Installed sing-box -> $SB_BIN"
