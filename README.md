@@ -1,273 +1,215 @@
-# sbx-lite (optimized, ACME-ready)
+# sbx-lite（官方 sing-box 极简最佳实践）
 
-一个围绕 **sing-box** 的轻量部署与管理工具：**默认 REALITY**，可选 **VLESS WS+TLS**、**Hysteria2**，带本地 **面板 + CLI**、订阅生成、健康体检与**内置 ACME 自动签发**支持。
+**sbx-lite** 提供一套**最简、稳健**的官方 **sing-box** 部署流程：
+默认仅启用 **VLESS-REALITY**（无需证书，抗探测），可选一并启用 **VLESS-WS-TLS** 与 **Hysteria2（Hy2）**（自动签证书或使用现有证书）。
+脚本安装完成会直接**打印客户端导入 URI**；同样提供**一键卸载**。
 
-> 面板默认仅监听 127.0.0.1:7789（Basic Auth），请通过 **SSH 隧道**访问：
+> **重要前提（Cloudflare）**：
 >
-> ```bash
-> ssh -N -L 7789:127.0.0.1:7789 root@your-server
-> ```
+> * **Reality 必须灰云（DNS only）**；
+> * **Hy2 只能灰云**；
+> * **WS-TLS 可灰/橙云**（橙云时客户端看到的是 CF 证书，源站证书仅用于回源校验）。
+
+---
+
+## 目录
+
+* [特性](#特性)
+* [系统要求](#系统要求)
+* [一键安装](#一键安装)
+* [一键卸载](#一键卸载)
+* [参数与默认值](#参数与默认值)
+* [协议与端口](#协议与端口)
+* [验证与运维](#验证与运维)
+* [常见问题](#常见问题)
+* [安全与建议](#安全与建议)
+* [许可证](#许可证)
+
+---
+
+## 特性
+
+* **官方二进制**：自动下载并安装 sing-box 最新版。
+* **最小配置**：默认仅配 **VLESS-REALITY**，无需证书；按需启用 **WS-TLS** 与 **Hy2**。
+* **自动生成凭据**：Reality 私钥/公钥、`short_id`、`UUID`、Hy2 密码均自动生成。
+* **ACME（可选）**：支持 **DNS-01（Cloudflare，推荐）** 与 **HTTP-01** 自动签发与落盘。
+* **系统托管**：`systemd` 服务一键创建与启动。
+* **导入即用**：安装完成立即**打印** Reality/WS/Hy2 的**URI**。
+
+---
+
+## 系统要求
+
+* OS：Ubuntu 22.04/24.04（或等价 Linux，需 `bash`、`systemd`）。
+* 权限：`root` 或 `sudo`。
+* DNS：准备一个**灰云**域名/子域（如 `r.example.com`）指向服务器公网 IP。
+* 端口：默认 `443/tcp`（Reality），`8444/tcp`（WS-TLS），`8443/udp`（Hy2）。若占用将自动切换备用口。
+
+---
+
+## 一键安装
+
+> 默认只启用 **Reality**（最简稳）。如设置证书参数或启用 ACME，则**同时**启用 **WS-TLS** 与 **Hy2**。
+> 请把 `r.example.com` 替换为你的**灰云**域名。
+
+**仅 Reality（推荐）**
+
+```bash
+DOMAIN=r.example.com \
+bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh)
+```
+
+**DNS-01（Cloudflare）自动签证书 → 同时启用 WS-TLS + Hy2（推荐）**
+
+```bash
+DOMAIN=r.example.com \
+CERT_MODE=cf_dns \
+CF_Token='<你的Cloudflare API Token（Zone.DNS:Edit + Zone:Read）>' \
+bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh)
+```
+
+**HTTP-01 自动签证书（需灰云 & 80 直达且未被占用）**
+
+```bash
+DOMAIN=r.example.com \
+CERT_MODE=le_http \
+bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh)
+```
+
+**已有证书直接启用 WS-TLS + Hy2**
+
+```bash
+DOMAIN=r.example.com \
+CERT_FULLCHAIN=/etc/letsencrypt/live/r.example.com/fullchain.pem \
+CERT_KEY=/etc/letsencrypt/live/r.example.com/privkey.pem \
+bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh)
+```
+
+安装完成后终端会打印：
+
+* **VLESS-REALITY URI**（含 `pbk/sid/sni/flow/security` 等必需参数）
+* 若启用证书：**VLESS-WS-TLS URI** 与 **Hy2 URI**
+
+---
+
+## 一键卸载
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh \
+| sudo FORCE=1 bash -s -- uninstall
+```
+
+> 卸载将停止服务并删除二进制与 `/etc/sing-box/` 配置文件。
+
+---
+
+## 参数与默认值
+
+| 变量名              | 说明                                                     | 必需           | 默认                 |
+| ---------------- | ------------------------------------------------------ | ------------ | ------------------ |
+| `DOMAIN`         | 你的域名（灰云/DNS only）                                      | ✅            | —                  |
+| `CERT_MODE`      | ACME 模式：`cf_dns`（DNS-01，推荐）或 `le_http`（HTTP-01）        | 否            | 空（不签，Reality-only） |
+| `CF_Token`       | Cloudflare API Token（最小权限：Zone.DNS\:Edit + Zone\:Read） | `cf_dns` 时必需 | —                  |
+| `CERT_FULLCHAIN` | 现有证书路径（fullchain.pem）                                  | 否            | —                  |
+| `CERT_KEY`       | 现有证书路径（privkey.pem）                                    | 否            | —                  |
+
+> 端口与路径：
 >
-> 将 `your-server` 替换为 **你的服务器公网 IP 或域名**（如 `root@203.0.113.10` / `root@sbx.example.com`）。
+> * 配置：`/etc/sing-box/config.json`
+> * 二进制：`/usr/local/bin/sing-box`
+> * 服务：`systemctl enable --now sing-box`
 
 ---
 
-## 一键安装（推荐）
-支持 curl 和 wget：
+## 协议与端口
+
+| 协议            |   端口（默认） | 证书 | 说明                                                                                             |
+| ------------- | -------: | -- | ---------------------------------------------------------------------------------------------- |
+| VLESS-REALITY |  443/tcp | 否  | 抗探测，最稳，需灰云；`flow=xtls-rprx-vision`；服务端含 `handshake`/`private_key`/`short_id`，客户端需 `public_key` |
+| VLESS-WS-TLS  | 8444/tcp | 是  | 可走橙云；客户端看到 CF 证书，源站证书用于回源                                                                      |
+| Hy2           | 8443/udp | 是  | 高性能 QUIC，仅灰云；必须 `tls.certificate_path/key_path`                                                |
+
+> 如端口被占用，脚本会自动切换备用口（并在终端明确提示）。
+
+---
+
+## 验证与运维
+
+**配置校验与服务状态**
+
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/quick.sh)
-# 或
-bash <(wget -qO- https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/quick.sh)
+sing-box check -c /etc/sing-box/config.json
+systemctl status sing-box --no-pager
+journalctl -u sing-box -e --no-pager
 ```
-> 环境变量：`SBX_REPO` 指定仓库（默认 `YYvanYang/sbx-lite`），`SBX_BRANCH` 指定分支（默认 `main`）。
 
-安装完成：
-- 面板：`http://127.0.0.1:7789/`（首页显示 admin 密码）
-- 服务：`systemctl status sing-box` / `systemctl status sbx-panel`
+**客户端导入（Reality 示例 URI）**
+
+```
+vless://UUID@r.example.com:443?
+  encryption=none
+  &security=reality
+  &flow=xtls-rprx-vision
+  &sni=www.cloudflare.com
+  &pbk=PUBLIC_KEY
+  &sid=SHORTID
+  &type=tcp
+  &fp=chrome
+# 实际使用请合并为一行，去掉换行与空格
+```
+
+**字段要点（Reality）**
+
+* 服务端：`reality.enabled`、`handshake.server/server_port`、`private_key`、`short_id`；
+* 客户端：`public_key (pbk)`、`short_id (sid)`、`sni`、`flow=xtls-rprx-vision`；
+* `alpn` 建议含 `h2,http/1.1`（服务端已默认配置）。
 
 ---
 
-## 首次使用（按场景）
+## 常见问题
 
-> 不需要把下面所有命令都执行一遍，**按你的方案挑选对应几条即可**。
+**1) Reality 连不通？**
 
-### A. 仅用 REALITY（推荐）
-```bash
-sudo sbxctl sethost-auto          # 或：sudo sbxctl sethost your.domain.com
-sudo sbxctl reality-keys          # 生成 Reality 私钥/公钥
-# 打开 /etc/sbx/sbx.yml，把 reality.short_id 设置为 1~8 位十六进制（例：ab12cd34）
-sudo sbxctl apply
-sudo sbx-diagnose
-```
-> 说明：默认已启用 Reality，WS/Hy2 默认关闭，无需额外 disable。
+* 域名须 **灰云**；
+* `sing-box check` 是否通过；
+* 443 端口是否被占；
+* 本机时间是否正确（TLS/Reality 对时钟敏感）。
 
-### B. 使用 VLESS WS+TLS（证书/ACME）
-```bash
-sudo sbxctl sethost your.domain.com
-sudo sbxctl cf proxied|direct     # Cloudflare 橙云选 proxied，直连选 direct
-# 打开 /etc/sbx/sbx.yml：启用 vless_ws_tls.enabled，并在 tls.acme.* 填写 domain/email（DNS-01 推荐填 Cloudflare API Token）
-# 如果 443 被 Reality 占用：sudo sbxctl disable reality  或者改其中任一协议的端口
-sudo sbxctl apply
-sudo sbx-diagnose
-```
+**2) Hy2 不工作？**
 
-### C. 使用 Hysteria2（Hy2）+ ACME
-```bash
-sudo sbxctl sethost your.domain.com
-# 打开 /etc/sbx/sbx.yml：启用 hysteria2.enabled，并在 hysteria2.tls.acme.* 填写 domain/email（DNS-01 推荐）
-# up_mbps/down_mbps 可留空（不写入 JSON，走服务端默认/BBR）
-sudo sbxctl apply
-sudo sbx-diagnose
-```
+* 必须有证书（自动签或自备），并放通 **UDP** 端口（默认 8443）。
+
+**3) WS-TLS 橙云是否可用？**
+
+* 可用。客户端看到的是 **CF 证书**（正常）；源站证书用于 CF 回源。
+
+**4) 重装/变更怎么做？**
+
+* 直接用同一安装命令覆盖（例如后续补充证书即可启用 WS/Hy2）。
 
 ---
 
-## 目录结构与路径
-- 配置（期望态）：`/etc/sbx/sbx.yml`
-- 生成（实态）：`/etc/sing-box/config.json`
-- 面板与逻辑：`/opt/sbx/panel`
-- 脚本与 CLI：`/opt/sbx/scripts`
-- Systemd：`/etc/systemd/system/{sbx-panel.service,sing-box.service}`
+## 安全与建议
+
+* **最小化暴露**：只开放必要端口；非必须不在 0.0.0.0 上开启额外服务。
+* **Cloudflare 最小权限**：DNS-01 推荐为自定义 Token，只授予 Zone.DNS\:Edit + Zone\:Read。
+* **定期审查**：关注 `journalctl -u sing-box` 日志与证书到期时间。
+* **备份**：保存好 `/etc/sing-box/config.json`（含自动生成的密钥与凭据）。
 
 ---
 
-## 配置说明（/etc/sbx/sbx.yml）
+## 许可证
 
-### 全局导出字段
-```yaml
-export:
-  host: "你的公网域名或IP"
-  name_prefix: "sbx"   # 生成订阅时的节点名前缀
-cloudflare_mode: "proxied"   # proxied | direct（影响 WS 默认证书路径）
-panel:
-  bind: 127.0.0.1
-  port: 7789
-```
-
-### 用户管理
-```yaml
-users:
-  - name: "phone"
-    enabled: true
-    token: ""         # 订阅访问令牌（创建/旋转自动生成）
-    vless_uuid: ""    # VLESS 用户 UUID（自动生成）
-    hy2_pass: ""      # Hy2 用户密码（自动生成）
-```
-
-### Reality（VLESS+XTLS-Vision+REALITY）
-```yaml
-inbounds:
-  reality:
-    enabled: true
-    listen_port: 443
-    server_name: "www.cloudflare.com"  # 伪装站点（SNI/握手）
-    private_key: ""                    # 服务端私钥
-    public_key: ""                     # 可选，供客户端订阅
-    short_id: ""                       # 0-8 hex，客户端必需
-```
-
-### VLESS WS+TLS（支持 ACME）
-```yaml
-inbounds:
-  vless_ws_tls:
-    enabled: false
-    listen_port: 443
-    domain: "example.com"
-    path: "/ws"
-
-    # 证书方式一：直接使用证书文件
-    cert_path: "/etc/ssl/cf/origin.pem"
-    key_path:  "/etc/ssl/cf/origin.key"
-
-    # 证书方式二：内置 ACME（存在且 enabled:true 时优先生效）
-    acme:
-      enabled: false
-      provider: "letsencrypt"          # letsencrypt | zerossl | custom
-      directory_url: ""                # 自定义 ACME 端点可用
-      email: "[email protected]"
-      domain: ["example.com"]
-      data_directory: "/var/lib/sbx/acme"
-      disable_http_challenge: true
-      disable_tls_alpn_challenge: true
-      alternative_http_port: 18080     # 占用80时可改用备用端口
-      alternative_tls_port: 15443      # 占用443时可改用备用端口
-      dns01_challenge:
-        provider: "cloudflare"
-        api_token: "CF_API_TOKEN"
-```
-
-### Hysteria2（支持 ACME）
-```yaml
-inbounds:
-  hysteria2:
-    enabled: false
-    listen_port: 8443
-    # 允许留空（不输出到 JSON -> 走服务端默认，有利于 BBR/Brutal）
-    up_mbps:
-    down_mbps:
-    global_password: ""   # 可选，全局密码（若用户未单独设置 hy2_pass）
-    tls:
-      # 文件证书
-      certificate_path: "/etc/ssl/fullchain.pem"
-      key_path: "/etc/ssl/privkey.pem"
-      # 或 ACME（结构与 WS 相同）
-      acme:
-        enabled: false
-        provider: "letsencrypt"
-        email: "[email protected]"
-        domain: ["hy2.example.com"]
-        data_directory: "/var/lib/sbx/acme"
-        disable_http_challenge: true
-        disable_tls_alpn_challenge: true
-        dns01_challenge:
-          provider: "cloudflare"
-          api_token: ""
-```
-
-### Cloudflare 模式
-- `proxied` 橙云：WS 默认指向 `/etc/ssl/cf/origin.{pem,key}`（**仅 CF 信任**）；建议 **DNS-01 ACME**。
-- `direct` 直连：WS 默认指向 `/etc/ssl/{fullchain,privkey}.pem`（例如 Let’s Encrypt）。
-- 通过 `sudo sbxctl cf proxied|direct` 自动切换并更新默认路径。
+* 本仓库脚本与文档：MIT License。
+* **sing-box** 版权与许可证请以其官方仓库为准。
 
 ---
 
-## 应用配置与体检
-```bash
-sudo sbxctl apply          # 生成 /etc/sing-box/config.json → sing-box check → 重启
-sudo sbx-diagnose          # 关键项体检（Reality/WS/Hy2/证书/用户等）
-```
-- 若同时启用 **Reality 与 WS 且端口相同**，会在生成阶段**报错**（避免 443 端口冲突）。
-- 若使用 ACME：
-  - **DNS-01**：确保填好 `api_token`；无需开放 80/443。
-  - **HTTP-01/TLS-ALPN-01**：若 80/443 被占用，可使用 `alternative_*_port` 并在防火墙/端口转发中做好映射。
-  - 系统需安装 **带 ACME** 的 `sing-box` 构建；可用一份最小 ACME 配置跑 `sing-box check` 验证。
+### 附：脚本位置
 
----
+* **一键脚本**：[`install_multi.sh`](./install_multi.sh)（在线安装命令已见上文）。
 
-## 订阅与客户端适配
-```
-http://127.0.0.1:7789/sub/<TOKEN>?format=<shadowrocket|singbox|clash|clash_full>
-# 额外参数：
-#   tpl=cn|balanced|global
-#   test=<URL>  或 test=auto&region=cn|cloudflare|global
-```
-- **Shadowrocket**：返回多行标准 URI（支持 Reality / WS / Hy2）。
-- **sing-box**：返回极简 JSON（移动端易用）。
-- **Clash**：返回 `proxies + proxy-groups` 的精简 YAML（由 `yaml.dump()` 输出）。
-- **Clash Full**：返回可直接运行的完整配置（规则/提供者/DNS 已内置）。
-
-> **命名**：节点名前缀来自 `export.name_prefix`，例如 `sbx-re-xxx / sbx-ws-xxx / sbx-hy2-xxx`。
-
----
-
-## 常见操作（CLI）
-```bash
-# 协议开关
-sudo sbxctl enable reality|ws|hy2
-sudo sbxctl disable reality|ws|hy2
-
-# Cloudflare/域名
-sudo sbxctl cf proxied|direct
-sudo sbxctl setdomain your.domain.com
-sudo sbxctl sethost 1.2.3.4   # 或 sethost-auto
-
-# 用户
-sudo sbxctl user-add iphone
-sudo sbxctl user-enable iphone
-sudo sbxctl user-disable iphone
-sudo sbxctl user-rotate iphone
-
-# Reality 密钥
-sudo sbxctl reality-keys
-```
-
----
-
-## 故障处理与排错
-- `sbx-diagnose` 显示：缺用户/缺密钥/证书缺失/端口冲突/ACME 配置缺项等。
-- `sing-box check -c /etc/sing-box/config.json`：总是第一手验证器。
-- 端口冲突：确保 Reality 与 WS 不在同一端口（默认 443）。
-- ACME 失败：
-  - DNS-01：检查 `api_token` 权限与解析域名是否在同账户下。
-  - HTTP-01/TLS-ALPN-01：确认 80/443 可达或已配置 `alternative_*_port` 转发。
-- Cloudflare 橙云：优先 DNS-01；Origin 证书**不被公众信任**，仅 CF 直连可用。
-- Hy2 吞吐：不设置 `up_mbps/down_mbps` ⇒ 采用服务端默认（利于高带宽/低延迟）。
-- 日志：`journalctl -u sing-box -e`，`journalctl -u sbx-panel -e`。
-
----
-
-## 安全建议
-- 面板只绑定 `127.0.0.1`，通过 SSH 隧道访问；不要裸露到公网。
-- 订阅链接携带 Token，请仅在可信渠道分发；定期 `user-rotate`。
-- 及时更新系统与 `sing-box`，并限制入站端口的访问面。
-
----
-
-## 升级卸载
-```bash
-# 升级：覆盖 /opt/sbx 与脚本后
-sudo systemctl daemon-reload
-sudo systemctl restart sbx-panel
-sudo sbxctl apply
-
-# 卸载
-sudo ./uninstall.sh
-```
-
----
-
-## FAQ
-**Q: 必须使用带 ACME 的 sing-box 吗？**
-A: 仅当你要用 `tls.acme` 自动签发时需要；否则可直接放置证书文件。
-
-**Q: Reality 与 WS 能同时开吗？**
-A: 可以，但需**不同端口**；默认都在 443 时会被拦截提示。
-
-**Q: Clash Full 的规则能自定义吗？**
-A: 可以，修改面板服务端生成逻辑或在客户端侧叠加你自己的规则。
-
----
-
-## 致谢与许可
-- 核心依赖：**sing-box**（SagerNet）；部分规则/思路参考社区常用模板。
-- License：MIT（可按需调整）。
+  * 默认启用 **VLESS-REALITY**；
+  * 设置 `CERT_MODE`/`CF_Token` 或提供 `CERT_FULLCHAIN`/`CERT_KEY` 即可同时启用 **WS-TLS** 与 **Hy2**；
+  * 安装结束自动打印各协议的**导入 URI**；
+  * 卸载命令见上文“一键卸载”。
