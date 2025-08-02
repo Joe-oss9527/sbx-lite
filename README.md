@@ -43,8 +43,6 @@
 ---
 
 ## 一键安装（推荐）
-
-## 一键安装（推荐）
 支持 curl 和 wget：
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/quick.sh)
