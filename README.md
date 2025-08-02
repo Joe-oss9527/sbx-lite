@@ -1,5 +1,4 @@
-
-# sbx-lite
+# sbx-lite (optimized, ACME-ready)
 
 一个围绕 **sing-box** 的轻量部署与管理工具：**默认 REALITY**，可选 **VLESS WS+TLS**、**Hysteria2**，带本地 **面板 + CLI**、订阅生成、健康体检与**内置 ACME 自动签发**支持。
 
@@ -7,9 +6,42 @@
 
 ---
 
+## 一键安装（推荐）
+支持 curl 和 wget：
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/quick.sh)
+# 或
+bash <(wget -qO- https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/quick.sh)
+```
+> 环境变量：`SBX_REPO` 指定仓库（默认 `YYvanYang/sbx-lite`），`SBX_BRANCH` 指定分支（默认 `main`）。
+
+安装完成：
+- 面板：`http://127.0.0.1:7789/`（首页显示 admin 密码）
+- 服务：`systemctl status sing-box` / `systemctl status sbx-panel`
+
+首配建议：
+```bash
+sudo sbxctl sethost-auto            # 自动探测出口 IP（或改成你的域名）
+sudo sbxctl cf proxied|direct       # Cloudflare 橙云/直连模式
+sudo sbxctl enable reality          # 默认推荐 Reality
+sudo sbxctl disable ws
+sudo sbxctl disable hy2
+sudo sbxctl apply
+sudo sbx-diagnose
+```
+
+### 离线安装（可选）
+> 仅在无法访问 GitHub Raw 时使用。
+```bash
+unzip sbx-lite-optimized.zip
+cd sbx-lite-optimized
+sudo ./scripts/install.sh
+```
+
+---
+
 ## 目录
 - [特性一览](#特性一览)
-- [快速开始](#快速开始)
 - [目录结构与路径](#目录结构与路径)
 - [配置说明（/etc/sbx/sbx.yml）](#配置说明etscsbxsbxyml)
   - [全局导出字段](#全局导出字段)
@@ -23,14 +55,14 @@
 - [常见操作（CLI）](#常见操作cli)
 - [故障处理与排错](#故障处理与排错)
 - [安全建议](#安全建议)
-- [升级/卸载](#升级卸载)
+- [升级卸载](#升级卸载)
 - [FAQ](#faq)
 - [致谢与许可](#致谢与许可)
 
 ---
 
 ## 特性一览
-- ✅ **内置 ACME**：WS-TLS 与 Hy2 支持 ACME（Let’s Encrypt/ZeroSSL/自定义），可选 **DNS-01（Cloudflare 等）**；支持 `alternative_http_port/alternative_tls_port`。
+- ✅ **内置 ACME**：WS-TLS 与 Hy2 支持 ACME（Let’s Encrypt/ZeroSSL/自定义），可选 **DNS-01（Cloudflare/...）**；支持 `alternative_http_port/alternative_tls_port`。
 - ✅ **端口冲突保护**：阻止 Reality 与 WS 绑定同一端口（默认 443）。
 - ✅ **Hy2 吞吐可空**：`up_mbps/down_mbps` 允许留空，走服务端默认（便于 BBR/Brutal）。
 - ✅ **面板 + CLI**：统一编辑 `/etc/sbx/sbx.yml`，一键 `apply → check → restart`。
@@ -39,45 +71,6 @@
 - ✅ **安全默认值**：面板仅本地监听、订阅 Token、TLS 校验默认开启。
 
 > **聚焦现代协议**：Reality（默认）、WS+TLS、Hysteria2。其余协议暂不内置。
-
----
-
-## 一键安装（推荐）
-支持 curl 和 wget：
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/quick.sh)
-# 或
-bash <(wget -qO- https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/quick.sh)
-```
-> 环境变量：`SBX_REPO` 指定仓库（默认 `YYvanYang/sbx-lite`），`SBX_BRANCH` 指定分支（默认 `main`）。
-
-## 快速开始
-> 需要 root；建议 Debian/Ubuntu。`sing-box` 需为**带 ACME 能力**的构建（若无 ACME，也可先用证书文件）。
-
-```bash
-# 方式 A：使用打包 Zip（推荐本仓 Zip）
-unzip sbx-lite-optimized.zip
-cd sbx-lite-optimized
-sudo ./scripts/install.sh
-
-# 方式 B：自备环境后手动安装
-# 将 panel/ scripts/ systemd/ config/ 拷贝至 /opt/sbx 与 /etc，执行 systemd 安装步骤
-```
-
-安装完成：
-- 面板：`http://127.0.0.1:7789/`（第一页会显示 admin 密码）
-- 服务：`systemctl status sing-box` / `systemctl status sbx-panel`
-
-首配建议：
-```bash
-sudo sbxctl sethost-auto            # 自动探测出口 IP（或改成你的域名）
-sudo sbxctl cf proxied|direct       # Cloudflare 橙云/直连模式
-sudo sbxctl enable reality          # 默认推荐 Reality
-sudo sbxctl disable ws
-sudo sbxctl disable hy2
-sudo sbxctl apply
-sudo sbx-diagnose
-```
 
 ---
 
@@ -124,7 +117,6 @@ inbounds:
     public_key: ""                     # 可选，供客户端订阅
     short_id: ""                       # 0-8 hex，客户端必需
 ```
-> **注意**：`private_key/short_id` 必须存在；面板/CLI 可一键生成。
 
 ### VLESS WS+TLS（支持 ACME）
 ```yaml
@@ -155,7 +147,6 @@ inbounds:
         provider: "cloudflare"
         api_token: "CF_API_TOKEN"
 ```
-> **建议**：使用 **DNS-01**（Cloudflare Token）避免 80/443 暴露或被占用。
 
 ### Hysteria2（支持 ACME）
 ```yaml
@@ -195,7 +186,7 @@ inbounds:
 ## 应用配置与体检
 ```bash
 sudo sbxctl apply          # 生成 /etc/sing-box/config.json → sing-box check → 重启
-sudo sbx-diagnose          # 关键项体检（现实/WS/Hy2/证书/用户等）
+sudo sbx-diagnose          # 关键项体检（Reality/WS/Hy2/证书/用户等）
 ```
 - 若同时启用 **Reality 与 WS 且端口相同**，会在生成阶段**报错**（避免 443 端口冲突）。
 - 若使用 ACME：
@@ -206,7 +197,6 @@ sudo sbx-diagnose          # 关键项体检（现实/WS/Hy2/证书/用户等）
 ---
 
 ## 订阅与客户端适配
-面板首页显示订阅链接样例。也可手工拼接：
 ```
 http://127.0.0.1:7789/sub/<TOKEN>?format=<shadowrocket|singbox|clash|clash_full>
 # 额外参数：
@@ -215,7 +205,7 @@ http://127.0.0.1:7789/sub/<TOKEN>?format=<shadowrocket|singbox|clash|clash_full>
 ```
 - **Shadowrocket**：返回多行标准 URI（支持 Reality / WS / Hy2）。
 - **sing-box**：返回极简 JSON（移动端易用）。
-- **Clash**：返回 `proxies + proxy-groups` 的精简 YAML。
+- **Clash**：返回 `proxies + proxy-groups` 的精简 YAML（由 `yaml.dump()` 输出）。
 - **Clash Full**：返回可直接运行的完整配置（规则/提供者/DNS 已内置）。
 
 > **命名**：节点名前缀来自 `export.name_prefix`，例如 `sbx-re-xxx / sbx-ws-xxx / sbx-hy2-xxx`。
@@ -265,7 +255,7 @@ sudo sbxctl reality-keys
 
 ---
 
-## 升级/卸载
+## 升级卸载
 ```bash
 # 升级：覆盖 /opt/sbx 与脚本后
 sudo systemctl daemon-reload
@@ -279,17 +269,17 @@ sudo ./uninstall.sh
 ---
 
 ## FAQ
-**Q: 必须使用带 ACME 的 sing-box 吗？**  
+**Q: 必须使用带 ACME 的 sing-box 吗？**
 A: 仅当你要用 `tls.acme` 自动签发时需要；否则可直接放置证书文件。
 
-**Q: Reality 与 WS 能同时开吗？**  
+**Q: Reality 与 WS 能同时开吗？**
 A: 可以，但需**不同端口**；默认都在 443 时会被拦截提示。
 
-**Q: Clash Full 的规则能自定义吗？**  
+**Q: Clash Full 的规则能自定义吗？**
 A: 可以，修改面板服务端生成逻辑或在客户端侧叠加你自己的规则。
 
 ---
 
 ## 致谢与许可
-- 核心依赖：**sing-box**（SagerNet）；部分规则/思路参考社区常用模板。  
+- 核心依赖：**sing-box**（SagerNet）；部分规则/思路参考社区常用模板。
 - License：MIT（可按需调整）。
