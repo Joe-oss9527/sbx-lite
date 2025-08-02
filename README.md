@@ -1,255 +1,299 @@
-# sbx-lite (sing-box + systemd + lightweight panel)
+# sbx-lite
 
-A minimal, auditable one-click deployment for **sing-box** with a tiny local config panel.
-- **Stack:** official sing-box (systemd), Node.js (Express) panel (binds to `127.0.0.1:7789` by default).
-- **Features:** VLESS-REALITY, VLESS-WS-TLS (CDN-ready), Hysteria2.
-- **Security defaults:** panel bound to localhost; random admin password stored at `/etc/sbx/panel.env`.
+**sbx-lite** 是一个面向个人/小团队的 **sing-box** 轻量化部署与管理工具，主打：**稳定、可维护、默认安全**。
+支持 **VLESS-REALITY**（默认）、**VLESS-WS-TLS**（可走 CDN 兜底）、**Hysteria2（Hy2）**，并带有**本地面板**、**一键诊断**、\*\*订阅自动生成（含 Mihomo/Clash 完整模板）\*\*等能力。
 
-> This is a minimal educational project. Review scripts before running in production.
-
+> 面板默认只绑定 **127.0.0.1**，**请通过 SSH 隧道**访问；除非你非常清楚地配置了反向代理与加固策略。
 
 ---
 
-## Multi-user & Subscriptions
+## 目录
 
-- Edit `/etc/sbx/sbx.yml`:
-  - Set `export.host` to your **public domain/IP** (REALITY/Hy2 使用此 host；WS-TLS 使用 `vless_ws_tls.domain`).
-  - Under `users:` add entries or use the API below.
-- Subscription endpoint (no admin auth; protected by per-user token):
-  - `GET /sub/<token>?format=shadowrocket` → returns URI list (Shadowrocket friendly).
-  - Supported formats: `shadowrocket|uri`, `singbox|json`, `clash|yaml`.
-  - Example (via SSH tunnel): `http://127.0.0.1:7789/sub/USER_TOKEN?format=shadowrocket`
-- Create user via API (requires admin auth):
-  - `POST /api/user/new` JSON `{ "name": "alice" }` → returns `token / vless_uuid / hy2_pass`.
-- Apply config: `/api/apply` or `sudo /opt/sbx/scripts/sbxctl apply`
-
-## Notes
-- REALITY links include `pbk/sid/sni`. For best compatibility keep `fp=chrome` and `alpn=h2,http/1.1`.
-- Hy2 URI conventions vary across clients; Shadowrocket recognizes the `hy2://PASSWORD@host:port?...` form in recent versions.
-- If enabling WS-TLS through CDN, ensure `vless_ws_tls.domain/path` match and certificates are valid (or use origin cert behind CDN).
-
-## Minimal Security
-- Panel binds to `127.0.0.1` by default. Use SSH port-forwarding for remote access.
-- Subscription endpoints are public but protected by **unguessable tokens** per user; rotate tokens if leaked.
-- To expose panel publicly, front it with TLS + IP allowlist or Cloudflare Access.
-
-
-
-## ACME 自动签发（可选，用于直连 TLS / 灰云场景）
-在 `/etc/sbx/sbx.yml` 的 `inbounds.vless_ws_tls.acme` 里开启：
-```yaml
-inbounds:
-  vless_ws_tls:
-    enabled: true
-    domain: "your.domain"
-    path: "/ws"
-    acme:
-      enabled: true
-      provider: "letsencrypt"
-      email: "you@example.com"
-      # CDN 场景建议 DNS-01（需自行配置相应 provider 的凭据/环境变量）
-      dns01: {}
-      # alternative_http_port: 8080
-      # alternative_tls_port: 8443
-```
-> 提示：在 CDN 橙云下，HTTP-01/TLS-ALPN-01 可能受影响，建议 DNS-01；
-> 证书由 sing-box 内置 ACME 自动申请与续期，无需手工跑 certbot。
-
-## 卸载
-仅移除 sbx-lite（保留 sing-box）：
-```bash
-sudo ./uninstall.sh
-```
-连同 sing-box 一并移除：
-```bash
-sudo ./uninstall.sh --remove-singbox
-```
-
-
-## Stability-first (no ACME path)
-- 默认不包含 ACME。VLESS-WS-TLS 如需证书有两条稳妥路径：
-  1) **走 CDN（橙云）**：在源站安装 **Cloudflare Origin Cert**，把路径填到 `cert_path/key_path`；客户端只连 CDN。
-  2) **你已有有效公认证书**：将其拷贝到服务器并设置 `cert_path/key_path`。
-- 若暂时不用 WS-TLS，直接保持 `vless_ws_tls.enabled: false`，仅使用 **REALITY / Hy2**，稳定性更高、依赖更少。
-
+* [特性总览](#特性总览)
+* [系统要求](#系统要求)
+* [快速开始](#快速开始)
+* [配置文件 `sbx.yml` 说明](#配置文件-sbxyml-说明)
+* [协议与证书](#协议与证书)
+* [订阅输出与模板](#订阅输出与模板)
+* [面板与命令行](#面板与命令行)
+* [诊断与健康检查](#诊断与健康检查)
+* [安全建议](#安全建议)
+* [常见问题](#常见问题)
+* [变更记录（摘要）](#变更记录摘要)
 
 ---
 
-# 使用指南（清晰上手）
+## 特性总览
 
-## 1. 快速开始
+* **协议**
+
+  * **VLESS-REALITY**（默认开启，抗探测、依赖最少）
+  * **VLESS-WS-TLS**（可选；支持 Cloudflare 橙云/灰云）
+  * **Hysteria2（Hy2）**（可选；**必须** TLS 证书）
+* **订阅**
+
+  * `shadowrocket` / `singbox`（JSON）/ `clash`（分组）/ `clash_full`（含 `proxy-groups + rule-providers + rules + DNS`）
+  * 支持 `tpl=` 模板选择（`cn | balanced | global`）、`test=` 测速 URL 自定义、`test=auto&region=` 地区自适应
+* **面板（仅本地）**
+
+  * Checklist（必填项检测 + 一键修复）
+  * Users（增删改、启用/禁用、**一键轮换 token**、复制订阅、**二维码 PNG 下载**）
+  * Health/配置体检（`sing-box check`、服务状态、监听端口、证书摘要等）
+  * Hy2 证书向导（检查/保存证书路径）
+* **工具脚本**
+
+  * `sbxctl`（启停协议、用户管理、应用配置、诊断别名 `doctor`）
+  * `diagnose.sh`（覆盖服务、配置、端口、外网探测、证书等关键检查）
+  * `hy2_wizard.sh`（一键检查并写入 Hy2 证书路径）
+  * `cf_origin_helper.sh`（Cloudflare Origin Cert 放置与校验）
+* **稳健性**
+
+  * 生成器严格校验（无入站/缺关键字段直接报错）
+  * 安装备有可选 “冒烟测试”（可用 `SKIP_SMOKE=1` 跳过）
+
+---
+
+## 系统要求
+
+* **操作系统**：Ubuntu **22.04 / 24.04**（apt）
+* **权限**：`root` 或具备 `sudo`
+* **依赖**：安装脚本会自动安装 `sing-box`、`nodejs/npm`、`jq` 等
+* **端口**：默认 `443/TCP`（REALITY/WS-TLS），`8443/UDP`（Hy2，若启用）
+
+---
+
+## 快速开始
+
 ```bash
-unzip sbx-lite-v5.zip
+# 1) 安装
+unzip sbx-lite-v20.zip
 cd sbx-lite
-sudo ./install.sh
-# 编辑导出主机名（用于生成链接）
-sudo sed -i 's/YOUR_PUBLIC_HOST/example.com/' /etc/sbx/sbx.yml
-# 应用配置
+sudo ./install.sh              # 若暂时无证书，可 SKIP_SMOKE=1 ./install.sh
+
+# 2) 基本设置（导出 host、Cloudflare 模式与域名）
+sudo /opt/sbx/scripts/sbxctl sethost           # 可无参→自动探测公网IP
+sudo /opt/sbx/scripts/sbxctl cf proxied        # 橙云（CDN）或 direct（灰云）
+sudo /opt/sbx/scripts/sbxctl setdomain your.domain
+
+# 3) 协议（默认开启 REALITY）
+sudo /opt/sbx/scripts/sbxctl enable reality
+sudo /opt/sbx/scripts/sbxctl disable ws
+sudo /opt/sbx/scripts/sbxctl disable hy2
+
+# 4) 应用并诊断
 sudo /opt/sbx/scripts/sbxctl apply
-```
-
-## 2. 协议与配置位置
-- 源 YAML：`/etc/sbx/sbx.yml` → 生成：`/etc/sing-box/config.json`
-- 默认启用：**VLESS-REALITY@443/TCP**
-- 可选启用：
-  - **VLESS-WS-TLS**（走 CDN 建议使用 Origin Cert：填 `cert_path/key_path`）
-  - **Hysteria2@8443/UDP**
-- 修改后执行：`sudo /opt/sbx/scripts/sbxctl apply`
-
-## 3. 多用户与订阅
-- 新增用户（需 admin 认证）
-  ```bash
-  curl -u admin:$(sudo awk -F= '/ADMIN_PASS/{print $2}' /etc/sbx/panel.env)        -H 'Content-Type: application/json'        -d '{"name":"alice"}'        http://127.0.0.1:7789/api/user/new
-  ```
-- 分发订阅（订阅接口无需 admin 认证，靠 token 保护）
-  - Shadowrocket（URI 列表）：`http://127.0.0.1:7789/sub/<TOKEN>?format=shadowrocket`
-  - Sing-box（JSON）：`http://127.0.0.1:7789/sub/<TOKEN>?format=singbox`
-  - Clash（YAML）：`http://127.0.0.1:7789/sub/<TOKEN>?format=clash`
-
-> 面板默认仅监听 `127.0.0.1:7789`，建议用 SSH 隧道：
-> `ssh -N -L 7789:127.0.0.1:7789 root@你的服务器`
-
-## 4. 自检脚本（强烈建议）
-```bash
 sudo /opt/sbx/scripts/diagnose.sh
 ```
-会自动检查：
-- sing-box 是否安装/运行、配置是否通过 `check`；
-- REALITY/WS-TLS/Hy2 对应端口是否监听；
-- 订阅接口是否可用；
-- 若启用 WS-TLS，则简要探测 HTTPS 可达性。
 
-## 5. 卸载
-- 仅移除 sbx-lite：`sudo ./uninstall.sh`
-- 连同 sing-box 一并移除：`sudo ./uninstall.sh --remove-singbox`
+**访问面板（仅本地回环）**
 
-## 6. 安全与最佳实践
-- 面板仅本地监听；如需公网，务必加反代 + TLS + IP 白名单或 Zero Trust。
-- 多人使用请为每个用户分配独立 `uuid/token`，泄露时单独吊销即可。
-- REALITY 推荐 `server_name` 选常见大站；WS-TLS 走 CDN 时固定 `path`，证书用 Origin Cert 更稳。
-
-## 7. 常见问题
-- **订阅 404**：token 不存在或用户未启用；检查 `/etc/sbx/sbx.yml` 的 `users:`。
-- **REALITY 无法连接**：核对 `public_key/short_id/SNI`、时间同步、客户端指纹先用 `chrome`。
-- **WS-TLS 握手失败**：确认证书路径与域名一致；CDN 回源正常；必要时灰云测试。
-- **Hy2 不通**：确认放行 UDP，必要时更换端口或排查运营商限制；服务器用 `ss -plun` 查看监听。
-
-
-## 一键命令（开关协议 / CF 模式 / 主机名）
 ```bash
-# 开关协议（默认 REALITY 已启用）
-sudo /opt/sbx/scripts/sbxctl enable reality|ws|hy2
-sudo /opt/sbx/scripts/sbxctl disable reality|ws|hy2
-
-# 切换 Cloudflare 模式：proxied=橙云（CDN），direct=灰云（直连）
-sudo /opt/sbx/scripts/sbxctl cf proxied
-sudo /opt/sbx/scripts/sbxctl cf direct
-
-# 设置导出主机（订阅里使用）与 WS-TLS 域名
-sudo /opt/sbx/scripts/sbxctl sethost example.com
-sudo /opt/sbx/scripts/sbxctl setdomain example.com
-
-# 用户管理
-sudo /opt/sbx/scripts/sbxctl adduser phone
-sudo /opt/sbx/scripts/sbxctl rmuser phone
+ssh -N -L 7789:127.0.0.1:7789 root@server
+# 然后浏览器打开 http://127.0.0.1:7789 （Basic-Auth）
 ```
 
-> 安装时会自动：
-> - 生成 `REALITY` 密钥/短ID/UUID；
-> - **探测公网IP** 并在仍为占位时把它填入 `export.host`；
-> - 预置 `phone` 与 `laptop` 两个用户（可按需删除/新增）。
+---
 
+## 配置文件 `sbx.yml` 说明
 
-## 系统支持
-- 支持 **Ubuntu 22.04 / 24.04 LTS**（安装脚本会做版本检查）。
-- 其他发行版可手动安装 Node/npm 与 sing-box，然后把本项目文件按同样目录布局部署。
+路径：`/etc/sbx/sbx.yml`。字段按 **\[必需] / \[推荐] / \[可选] / \[自动生成]** 注释。
 
+```yaml
+panel:
+  bind: 127.0.0.1         # [可选] 面板监听（默认仅本地，建议保持）
+  port: 7789              # [可选]
 
+export:
+  host: "YOUR_PUBLIC_HOST"  # [推荐] 订阅/链接用的主机名或IP；也可在订阅URL用 ?host= 临时覆盖
+  name_prefix: "sbx"        # [可选] 节点名前缀
 
-## v9 新增功能
-- **外网连通性探测**（diagnose.sh）：
-  - 对启用的 **WS-TLS**，使用 `curl --resolve domain:port:IP` 做 SNI/直连探测，并做基于 DNS 的直连探测。
-- **Cloudflare Origin Cert 助手**：
-  ```bash
-  sudo /opt/sbx/scripts/cf_origin_helper.sh check            # 检查证书存在/权限/有效期
-  sudo /opt/sbx/scripts/cf_origin_helper.sh install cert.pem key.pem
-  sudo /opt/sbx/scripts/cf_origin_helper.sh stdin            # 交互粘贴写入
-  ```
-  证书默认放置在：`/etc/ssl/cf/origin.pem` 与 `/etc/ssl/cf/origin.key`。
+cloudflare_mode: "proxied"  # [推荐] proxied(橙云) | direct(灰云)
 
+users:                      # 至少1个 enabled:true 用户（安装时会创建）
+  - name: "phone"           # [必需]
+    enabled: true           # [必需]
+    token: "..."            # [必需, 自动生成] 订阅鉴权
+    vless_uuid: "..."       # [必需, 自动生成] VLESS/REALITY/WS-TLS
+    hy2_pass: "..."         # [必需]* 启用Hy2时必需（自动生成）
+  - name: "laptop"
+    enabled: true
+    token: "..."
+    vless_uuid: "..."
+    hy2_pass: "..."
 
-## 配置注释更清晰（v10）
-- 默认 `/etc/sbx/sbx.yml` 已对每个字段标注 **[必需]/[推荐]/[可选]/[自动生成]**。
-- `diagnose.sh` 会针对缺失的必填项给出**明确的修复建议**（例如放置证书、补充域名、添加用户等）。
+inbounds:
+  reality:
+    enabled: true                 # [必需]
+    listen_port: 443              # [可选]
+    server_name: "www.cloudflare.com"  # [必需] 握手SNI
+    private_key: "..."            # [自动生成]
+    public_key: "..."             # [可选]* 客户端必需；请填写（诊断会检查）
+    short_id: "..."               # [自动生成]
 
+  vless_ws_tls:
+    enabled: false                # [必需]* 需要时设 true
+    listen_port: 443              # [可选]
+    domain: "example.com"         # [必需] 橙云→CDN 域、灰云→源站域
+    path: "/ws"                   # [可选]
+    # 橙云(推荐)：Cloudflare Origin Cert
+    cert_path: "/etc/ssl/cf/origin.pem"
+    key_path:  "/etc/ssl/cf/origin.key"
+    # 灰云：/etc/ssl/fullchain.pem 与 /etc/ssl/privkey.pem
 
-## v11 面板增强
-- 面板新增 **Checklist**：自动检测缺失/风险项（用户、REALITY SNI、WS 证书等），并提供**一键修复按钮**（启用协议、设置 Host、添加用户等）。
-- 仍建议在变更后运行：`sudo /opt/sbx/scripts/diagnose.sh` 进行更全面的校验与外部探测。
-
-
-## v12 更新
-- `sethost` 支持**空参数自动探测公网 IP**（面板 `/api/fix` 同步支持）。
-- 新增 `sbxctl doctor`，等价于运行 `diagnose.sh`。
-- 诊断脚本在 WS-TLS 证书存在时会显示**证书到期信息**（需要安装 openssl）。
-
-
-## v13 更新
-- **Clash/Mihomo 订阅**：在 `?format=clash` 输出中新增 `proxy-groups`：
-  - `🟢 Auto`（`type: url-test`，`url: https://www.gstatic.com/generate_204`，`interval: 300`，`tolerance: 50`，`lazy: true`），
-  - `🔀 Select`（`type: select`，包含 `Auto`、全部节点与 `DIRECT`）。
-- **面板用户管理**：新增“Users”面板（需 admin 认证）：
-  - 列表展示用户与 token/UUID/Hy2 状态；
-  - 一键 **Rotate token**、**Enable/Disable**、**Delete**、**Add**。
-- **命令行**：新增 `sbxctl user-rotate|user-enable|user-disable <name>`。
-
-
-## v14 更新
-- 新增 `?format=clash_full`：输出 **完整 Mihomo 模板**（`proxies + proxy-groups + rule-providers + rules`），默认 Rule 模式、常见规则顺序（applications/private/reject/direct/proxy/tld-not-cn/geoip-cn/match）。
-- 面板“Users”表中新增：
-  - **Copy subs**（一键复制该用户四种订阅 URL）；
-  - 顶部 **Share all subs**（批量生成所有用户的分享链接，便于分发）。
-> 规则提供者使用开源公共列表（如 Loyalsoldier），如需私有镜像可手动替换生成的订阅内容中的 URL。
-
-
-## v15 更新
-- `?format=clash_full` 现已包含 **DNS** 配置（`enhanced-mode: fake-ip`、DoH/DoT 远程 DNS、`proxy-server-nameserver`、`fake-ip-filter` 基线）。
-- 支持多模板选择（通过 URL 参数 `tpl=`）：
-  - `tpl=global`：**全局代理**（除私有网段/应用/CN 外全部走代理）。
-  - `tpl=cn`：**中国大陆优先直连**（默认，平衡常用需求）。
-  - 未指定或其它值 → 与 `tpl=cn` 相同的**平衡**模板。
-- 面板“Users”增加 **二维码**：可为每位用户生成 **Shadowrocket/Sing-box 订阅**二维码，扫码即导入。
-
-
-## v16 更新
-- **Clash Full DNS 分流**：在 `?format=clash_full` 的 `dns` 段中加入：
-  - `nameserver-policy`：`geosite:cn` → 本地 DNS（119.29.29.29 / 223.5.5.5）；`geosite:geolocation-!cn` → DoH（1.1.1.1 / 8.8.8.8）。
-  - `fallback-filter`：基于 `geoip CN` 与常见外网域名强制走回退解析，提升结果稳定性。
-- **面板模板选择**：在面板加入下拉框（CN直连/平衡/全局），一键复制对应的 `clash_full` 订阅链接。
-- **二维码图片下载**：二维码弹窗支持导出 **PNG 文件**（Shadowrocket / Sing-box 各一张），便于分享。
-> 注：`nameserver-policy` 中的 `geosite:*` 依赖客户端侧内置/可更新的地理库（Mihomo/Clash Meta 常见发行版会自动下载）。
-
-
-### 重要：Hy2 证书必填
-- 启用 Hysteria2 时，`/etc/sbx/sbx.yml` 中必须提供：
-  ```yaml
   hysteria2:
-    tls:
-      certificate_path: /etc/ssl/fullchain.pem
-      key_path: /etc/ssl/privkey.pem
-  ```
-  或使用 `tls.acme`（如果你有内置 ACME 环境）。没有 TLS 将无法生成有效配置。
+    enabled: false                # [必需]* 需要时设 true（放行UDP）
+    listen_port: 8443             # [可选]
+    up_mbps: 100                  # [可选]
+    down_mbps: 100                # [可选]
+    global_password: ""           # [可选]* 不推荐多人共用
+    tls:                          # [必需]* 启用Hy2必须 TLS
+      certificate_path: "/etc/ssl/fullchain.pem"
+      key_path:         "/etc/ssl/privkey.pem"
+      # 或 acme: {...}
+```
 
-### Shadowrocket / URI 完整性
-- REALITY（VLESS）：URI 已包含 `flow=xtls-rprx-vision`、`security=reality`、`pbk/sid/sni/fp` 等关键参数。
-- WS-TLS（VLESS）：URI 包含 `security=tls&sni=...&type=ws&host=...&path=...&encryption=none`。
-- Hy2：URI 包含 `sni`、`alpn=h3`，并默认 `insecure=0`。
+> 修改后运行：`sudo /opt/sbx/scripts/sbxctl apply`（内部会先 `sing-box check` 通过才重启）。
 
+---
 
-## v19 更新
-- **Hy2 一键证书向导**：
-  - 新增脚本 `hy2_wizard.sh`：检测证书存在性、打印证书信息（若装有 openssl），并写入 `hysteria2.tls.certificate_path/key_path`。
-  - 面板提供 `/api/hy2/tls-check` 与 `/api/hy2/tls-set`，可在 UI 中“检查/保存”。
-- **配置体检（Health）页面**：
-  - 面板新增“Health / 配置体检”卡片：一键运行体检，展示 `sing-box check`、服务状态、端口监听、启用入站摘要等。
-  - 后端 `/api/health` 汇总 `diag.js` 信息与系统检查结果。
+## 协议与证书
+
+### VLESS-REALITY（默认）
+
+* 最少依赖、抗探测。
+* 必填：`server_name`、`private_key`、`short_id`；**建议**填 `public_key`（用于客户端订阅）。
+* 客户端（Mihomo/Clash/Shadowrocket）需要 `flow=xtls-rprx-vision`（订阅已包含）。
+
+### VLESS-WS-TLS（可选，CDN 兜底）
+
+* **橙云（proxied）**：用 **Cloudflare Origin Cert**（放置到 `/etc/ssl/cf/*`，用 `cf_origin_helper.sh` 助手）。
+* **灰云（direct）**：用公认证书 `/etc/ssl/fullchain.pem + /etc/ssl/privkey.pem`。
+* 订阅会填 `security=tls&sni&host&path&encryption=none`。
+
+### Hysteria2（可选）
+
+* **必须** TLS：`hysteria2.tls.certificate_path/key_path` 或 `acme`。无证书 → **生成器拒绝**。
+* 用户密码优先使用每用户 `hy2_pass`，否则退回 `global_password`。
+* 提供 CLI/面板向导：`hy2_wizard.sh` / “Hy2 证书向导”卡片。
+
+---
+
+## 订阅输出与模板
+
+基础形式：
+
+```
+http://127.0.0.1:7789/sub/<TOKEN>?format=<shadowrocket|singbox|clash|clash_full>
+```
+
+* `shadowrocket`：VLESS-REALITY/WS、Hy2 URI（参数完整，含 flow/security/sni 等）
+* `singbox`：原生 JSON
+* `clash`：`proxies + proxy-groups`（含 `🟢 Auto(url-test)` / `🔀 Select`）
+* `clash_full`：**完整模板**（`proxies + proxy-groups + rule-providers + rules + DNS`）
+
+**模板与测速 URL**（仅 clash/clash\_full）：
+
+* `tpl=cn | balanced | global`（默认 `cn`）
+* `test=<URL>` 或 `test=auto&region=cn|cloudflare|global`
+
+  * `auto, cn → http://connect.rom.miui.com/generate_204`
+  * `auto, cloudflare → https://cp.cloudflare.com/generate_204`
+  * `auto, global → https://www.gstatic.com/generate_204`
+
+**clash\_full 的 DNS 段（要点）**
+
+* `enhanced-mode: fake-ip`，`listen: 127.0.0.1:1053`（避免冲突与暴露）
+* `nameserver-policy`：`geosite:cn` 走本地 DNS；`geosite:geolocation-!cn` 走 DoH
+* `fallback-filter`: 基于 `geoip CN` 与常见外网域名，提高返回结果稳定性
+
+> `geosite:*` 依赖客户端 geodata（Mihomo/Clash Meta 会自动下载）。
+
+---
+
+## 面板与命令行
+
+### 面板（默认仅 127.0.0.1）
+
+* **Checklist**：检测 `export.host`、用户、Reality SNI、公钥、WS 域名/证书、Hy2 密码/证书等 → 一键修复
+* **Users**：新增/删除、启用/禁用、**Rotate token**、复制订阅、**二维码显示+PNG 下载**
+* **Health**：`sing-box check`、服务状态、监听端口、Hy2 证书到期/签发者摘要
+* **Hy2 证书向导**：检查/保存证书路径（配合 `hy2_wizard.sh`）
+
+### CLI `sbxctl`（常用）
+
+```bash
+# 协议
+sbxctl enable {reality|ws|hy2}
+sbxctl disable {reality|ws|hy2}
+
+# Cloudflare 模式与域名/导出主机
+sbxctl cf {proxied|direct}
+sbxctl setdomain <domain>
+sbxctl sethost [host_or_ip]     # 可无参→自动探测公网IPv4
+
+# 用户
+sbxctl adduser <name>
+sbxctl rmuser <name>
+sbxctl user-rotate <name>
+sbxctl user-enable <name>
+sbxctl user-disable <name>
+
+# 应用/诊断
+sbxctl apply
+sbxctl doctor                   # 等价 /opt/sbx/scripts/diagnose.sh
+```
+
+---
+
+## 诊断与健康检查
+
+* **diagnose.sh**（建议每次改动后运行）
+
+  * `sing-box check`、服务进程、端口监听
+  * WS-TLS 证书存在性与到期信息（若装 `openssl`）
+  * 订阅接口可用性、外网连通性探测（WS 场景）
+  * Hy2 必填项（密码/证书）与 Reality `public_key` 缺失 → **FAIL** 提示
+* **面板 → Health / 配置体检**
+
+  * 展示 `sing-box check` 简要结果、服务状态、监听端口、Hy2 证书摘要
+  * 不替代 CLI 诊断的全量检查（但足够直观定位常见问题）
+
+---
+
+## 安全建议
+
+* **面板只本地监听**：默认 `127.0.0.1:7789`，请用 **SSH 隧道**访问。
+* **部署反代前**：务必加 Basic-Auth 之外的额外防护（IP 白名单、CSRF Token、WAF 等）。
+* **凭据文件权限**：`/etc/sbx/panel.env` 建议 `0600`。
+* **证书管理**：橙云用 Origin Cert（helper 脚本可用），灰云确保公认证书定期续期。
+* **升级前备份**：`/etc/sbx/sbx.yml` 与用户数据（尤其 tokens/uuid）。
+
+---
+
+## 常见问题
+
+**Q1: 诊断提示 “No inbound enabled”？**
+A：至少启用一个入站：`sbxctl enable reality` → `sbxctl apply`。
+
+**Q2: Reality 客户端连不上，诊断提示 “public\_key missing”？**
+A：把生成的 Reality **公钥**写入 `sbx.yml` 的 `inbounds.reality.public_key`（订阅需要）。
+
+**Q3: WS-TLS 失败，提示证书缺失？**
+A：根据 `cloudflare_mode` 放置对应证书并在 `sbx.yml` 写入 `cert_path/key_path`。
+橙云可用：`/opt/sbx/scripts/cf_origin_helper.sh install <cert> <key>`。
+
+**Q4: Hy2 启用但报 TLS 缺失？**
+A：使用 `hy2_wizard.sh` 写入证书路径，或在 `sbx.yml` 的 `hysteria2.tls` 指定证书/ACME，然后 `sbxctl apply`。
+
+**Q5: clash\_full 导入后 DNS 端口冲突？**
+A：项目默认 `127.0.0.1:1053`；如仍冲突，可在客户端侧改为其它端口并重启客户端。
+
+---
+
+## 变更记录（摘要）
+
+* **v14–v16**：`clash_full` 模板（规则/分组/DNS/分流）、模板下拉、订阅二维码/PNG 下载
+* **v17**：测速 URL 自定义与地区自适应、深色主题、用户搜索
+* **v18**：生成器重写（Hy2 强制 TLS、Reality/WS 校验）、Shadowrocket URI 完整化、诊断增强、安装冒烟
+* **v19**：Hy2 证书向导（CLI + 面板）、Health 体检页
+* **v20**：更安全的 `/api/fix`（spawn + 校验）、Reality 公钥缺失告警、DNS 监听改回环、安装可跳过冒烟
