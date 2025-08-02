@@ -1,5 +1,5 @@
 
-# sbx-lite (optimized, ACME-ready)
+# sbx-lite
 
 一个围绕 **sing-box** 的轻量部署与管理工具：**默认 REALITY**，可选 **VLESS WS+TLS**、**Hysteria2**，带本地 **面板 + CLI**、订阅生成、健康体检与**内置 ACME 自动签发**支持。
 
