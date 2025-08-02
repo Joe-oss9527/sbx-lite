@@ -11,7 +11,7 @@
 # Usage (install):
 #   DOMAIN=r.example.com bash install_multi.sh
 #   DOMAIN=r.example.com CERT_MODE=cf_dns CF_Token='xxx' bash install_multi.sh
-#   DOMAIN=r.example.com CERT_MODE=le_http bash install_multi.sh
+#   DOMAIN=r.example.com CERT_MODE=cf_dns CERT_FORCE=1 CF_Token='xxx' bash install_multi.sh
 #   DOMAIN=r.example.com CERT_FULLCHAIN=/path/fullchain.pem CERT_KEY=/path/privkey.pem bash install_multi.sh
 #
 # Usage (uninstall):
@@ -19,51 +19,34 @@
 
 set -euo pipefail
 
-# ------------------ Configurable defaults ------------------
-# Path to sing-box binary
 SB_BIN="/usr/local/bin/sing-box"
-# Config dir/file
 SB_CONF_DIR="/etc/sing-box"
 SB_CONF="$SB_CONF_DIR/config.json"
-# systemd unit file
 SB_SVC="/etc/systemd/system/sing-box.service"
 
-# Required: your domain (DNS only / gray-cloud)
 DOMAIN="${DOMAIN:-}"
-# ACME mode: cf_dns | le_http | "" (no ACME)
 CERT_MODE="${CERT_MODE:-}"
-# For cf_dns (scoped token; not persisted)
 CF_Token="${CF_Token:-}"
-# Optional for dns_cf
 CF_Zone_ID="${CF_Zone_ID:-}"
-# Optional for dns_cf
 CF_Account_ID="${CF_Account_ID:-}"
+CERT_FORCE="${CERT_FORCE:-0}"
 
-# If you already have certs, set BOTH to enable WS/Hy2 without ACME
 CERT_FULLCHAIN="${CERT_FULLCHAIN:-}"
 CERT_KEY="${CERT_KEY:-}"
 
-# Default ports; will auto-fallback if occupied
 REALITY_PORT="${REALITY_PORT:-443}"
 WS_PORT="${WS_PORT:-8444}"
 HY2_PORT="${HY2_PORT:-8443}"
 
-# Fallback ports if default is occupied
 REALITY_PORT_FALLBACK=24443
 WS_PORT_FALLBACK=24444
 HY2_PORT_FALLBACK=24445
 
-# Reality handshake SNI (large site)
 SNI_DEFAULT="${SNI_DEFAULT:-www.cloudflare.com}"
-
-# Certificate install target if ACME is used
 CERT_DIR_BASE="${CERT_DIR_BASE:-/etc/ssl/sbx}"
-
-# Allow pinning a specific sing-box version by tag (e.g., v1.9.5); empty => latest
 SINGBOX_VERSION="${SINGBOX_VERSION:-}"
-# -----------------------------------------------------------
+LOG_LEVEL="${LOG_LEVEL:-info}"
 
-# --------------- Styling & small helpers -------------------
 B="$(tput bold 2>/dev/null || true)"
 N="$(tput sgr0 2>/dev/null || true)"
 G="$(tput setaf 2 2>/dev/null || true)"
@@ -83,7 +66,6 @@ port_in_use() {
   lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null | grep -q ":$p" && return 0
   return 1
 }
-# -----------------------------------------------------------
 
 ensure_tools() {
   msg "Installing tools (curl/wget, tar, jq, openssl, ca-certificates, lsof)..."
@@ -157,7 +139,6 @@ download_singbox() {
   msg "Installed sing-box -> $SB_BIN"
 }
 
-# -------------------- ACME via acme.sh ---------------------
 acme_install() {
   [[ -x "$HOME/.acme.sh/acme.sh" ]] && return
   msg "Installing acme.sh ..."
@@ -173,7 +154,25 @@ acme_issue_cf_dns() {
   [[ -n "$CF_Token" ]] || die "CF_Token is required for CERT_MODE=cf_dns"
   export CF_Token CF_Zone_ID CF_Account_ID
   local ac="$HOME/.acme.sh/acme.sh"
-  "$ac" --issue -d "$DOMAIN" --dns dns_cf -k ec-256 --server letsencrypt
+  local force=()
+  [[ "$CERT_FORCE" = "1" ]] && force+=(--force)
+
+  set +e
+  local out
+  out="$("$ac" --issue -d "$DOMAIN" --dns dns_cf -k ec-256 --server letsencrypt "${force[@]}" 2>&1)"
+  local rc=$?
+  set -e
+
+  echo "$out" | sed -n '1,8p' >/dev/null
+
+  if [[ $rc -ne 0 ]]; then
+    if echo "$out" | grep -qiE 'Skipping|Domains not changed|Next renewal time'; then
+      warn "ACME says not due for renewal; will reuse existing order."
+    else
+      err "ACME issue failed"; echo "$out" >&2; die "ACME failed"
+    fi
+  fi
+
   local dir="$CERT_DIR_BASE/$DOMAIN"
   mkdir -p "$dir"
   "$ac" --install-cert -d "$DOMAIN" --ecc \
@@ -186,7 +185,23 @@ acme_issue_cf_dns() {
 acme_issue_le_http() {
   port_in_use 80 && die ":80 is in use; stop it or use CERT_MODE=cf_dns"
   local ac="$HOME/.acme.sh/acme.sh"
-  "$ac" --issue -d "$DOMAIN" --standalone -k ec-256 --server letsencrypt
+  local force=()
+  [[ "$CERT_FORCE" = "1" ]] && force+=(--force)
+
+  set +e
+  local out
+  out="$("$ac" --issue -d "$DOMAIN" --standalone -k ec-256 --server letsencrypt "${force[@]}" 2>&1)"
+  local rc=$?
+  set -e
+
+  if [[ $rc -ne 0 ]]; then
+    if echo "$out" | grep -qiE 'Skipping|Domains not changed|Next renewal time'; then
+      warn "ACME says not due for renewal; will reuse existing order."
+    else
+      err "ACME issue failed"; echo "$out" >&2; die "ACME failed"
+    fi
+  fi
+
   local dir="$CERT_DIR_BASE/$DOMAIN"
   mkdir -p "$dir"
   "$ac" --install-cert -d "$DOMAIN" --ecc \
@@ -210,9 +225,7 @@ maybe_issue_cert() {
   esac
   msg "Certificate installed: $CERT_FULLCHAIN"
 }
-# -----------------------------------------------------------
 
-# ---------------- Materials & config -----------------------
 UUID=""
 PRIV=""
 PUB=""
@@ -258,7 +271,7 @@ write_config() {
   : >"$SB_CONF"
   {
     echo '{'
-    echo '  "log": { "level": "info" },'
+    printf '  "log": { "level": "%s" },\n' "$LOG_LEVEL"
     echo '  "inbounds": ['
     local added=0
     add_comma(){ if [[ $added -eq 1 ]]; then echo ','; fi; added=1; }
@@ -268,7 +281,7 @@ write_config() {
       {
         "type": "vless",
         "tag": "in-reality",
-        "listen": "0.0.0.0",
+        "listen": "::",
         "listen_port": $REALITY_PORT_CHOSEN,
         "users": [
           { "uuid": "$UUID", "flow": "xtls-rprx-vision" }
