@@ -2,7 +2,13 @@
 
 一个围绕 **sing-box** 的轻量部署与管理工具：**默认 REALITY**，可选 **VLESS WS+TLS**、**Hysteria2**，带本地 **面板 + CLI**、订阅生成、健康体检与**内置 ACME 自动签发**支持。
 
-> 面板默认仅监听 127.0.0.1:7789（Basic Auth），请通过 **SSH 隧道**访问：`ssh -N -L 7789:127.0.0.1:7789 root@your-server`
+> 面板默认仅监听 127.0.0.1:7789（Basic Auth），请通过 **SSH 隧道**访问：
+> 
+> ```bash
+> ssh -N -L 7789:127.0.0.1:7789 root@your-server
+> ```
+> 
+> 将 `your-server` 替换为 **你的服务器公网 IP 或域名**（例如 `root@203.0.113.10` 或 `root@sbx.example.com`）。
 
 ---
 
@@ -29,6 +35,42 @@ sudo sbxctl disable hy2
 sudo sbxctl apply
 sudo sbx-diagnose
 ```
+
+---
+
+## 首次使用（按场景）
+
+> 不需要把下面所有命令都执行一遍，**按你的方案挑选对应几条即可**。
+
+### A. 仅用 REALITY（推荐）
+```bash
+sudo sbxctl sethost-auto          # 或：sudo sbxctl sethost your.domain.com
+sudo sbxctl reality-keys          # 生成 Reality 私钥/公钥
+# 打开 /etc/sbx/sbx.yml，设置 reality.short_id 为 1~8 位十六进制（例：ab12cd34）
+sudo sbxctl apply
+sudo sbx-diagnose
+```
+> 说明：默认已启用 Reality，WS/Hy2 默认关闭，无需额外 disable。
+
+### B. 使用 VLESS WS+TLS（证书/ACME）
+```bash
+sudo sbxctl sethost your.domain.com
+sudo sbxctl cf proxied|direct     # Cloudflare 橙云选 proxied，直连选 direct
+# 打开 /etc/sbx/sbx.yml：启用 vless_ws_tls.enabled，并在 tls.acme.* 填写 domain/email（DNS-01 推荐填 Cloudflare API Token）
+# 如果 443 被 Reality 占用：sudo sbxctl disable reality  或者改其中任一协议的端口
+sudo sbxctl apply
+sudo sbx-diagnose
+```
+
+### C. 使用 Hysteria2（Hy2）+ ACME
+```bash
+sudo sbxctl sethost your.domain.com
+# 打开 /etc/sbx/sbx.yml：启用 hysteria2.enabled，并在 hysteria2.tls.acme.* 填写 domain/email（DNS-01 推荐）
+# up_mbps/down_mbps 可留空（不写入 JSON，走服务端默认/BBR）
+sudo sbxctl apply
+sudo sbx-diagnose
+```
+
 
 ### 离线安装（可选）
 > 仅在无法访问 GitHub Raw 时使用。
