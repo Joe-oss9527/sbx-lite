@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# install_multi.sh
-# One-click official sing-box with:
+# install_multi.sh  —  One-click official sing-box with:
 # - VLESS-REALITY (required, no cert)
 # - VLESS-WS-TLS (optional, needs cert)
 # - Hysteria2 (optional, needs cert)
+#
 # Optional ACME via acme.sh:
 #   CERT_MODE=cf_dns  (Cloudflare DNS-01; needs CF_Token [Zone.DNS:Edit + Zone:Read])
-#   CERT_MODE=le_http (HTTP-01; needs :80 reachable & DNS-only)
+#   CERT_MODE=le_http (HTTP-01; needs :80 reachable & DNS only)
 #
 # Usage (install):
 #   DOMAIN=r.example.com bash install_multi.sh
@@ -147,6 +147,7 @@ acme_install() {
   else
     wget -qO- https://get.acme.sh | sh -s email=admin@"${DOMAIN#*.}" >/dev/null
   fi
+  # shellcheck disable=SC1091
   . "$HOME/.acme.sh/acme.sh.env"
 }
 
@@ -238,10 +239,11 @@ gen_materials() {
   [[ -n "$DOMAIN" ]] || die "DOMAIN is required (e.g., r.example.com)."
 
   msg "Generating Reality keypair / UUID / short_id / Hy2 password ..."
+  # shellcheck disable=SC2034
   read PRIV PUB < <("$SB_BIN" generate reality-keypair | awk '/PrivateKey:/{p=$2} /PublicKey:/{q=$2} END{print p" "q}')
   [[ -n "$PRIV" && -n "$PUB" ]] || die "Failed to generate Reality keypair"
   UUID="$(cat /proc/sys/kernel/random/uuid)"
-  SID="$(openssl rand -hex 4)"
+  SID="$(openssl rand -hex 4)"              
   HY2_PASS="$(openssl rand -hex 16)"
 
   REALITY_PORT_CHOSEN="$REALITY_PORT"
@@ -274,13 +276,17 @@ write_config() {
     local added=0
     add_comma(){ if [[ $added -eq 1 ]]; then echo ','; fi; added=1; }
 
+    # ---- VLESS REALITY (fixed) ----
     add_comma
     cat <<EOF
       {
         "type": "vless",
         "tag": "in-reality",
-        "listen": "::",
+        "listen": "0.0.0.0",
         "listen_port": $REALITY_PORT_CHOSEN,
+        "sniff": true,
+        "sniff_override_destination": true,
+        "domain_strategy": "ipv4_only",
         "users": [
           { "uuid": "$UUID", "flow": "xtls-rprx-vision" }
         ],
@@ -290,14 +296,15 @@ write_config() {
           "reality": {
             "enabled": true,
             "private_key": "$PRIV",
-            "short_id": "$SID",
+            "short_id": ["$SID"],
             "handshake": { "server": "$SNI_DEFAULT", "server_port": 443 }
           },
-          "alpn": ["h2","http/1.1"]
+          "alpn": ["h2"]
         }
       }
 EOF
 
+    # ---- Optional WS-TLS / Hy2 if cert is available ----
     if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" && -f "$CERT_FULLCHAIN" && -f "$CERT_KEY" ]]; then
       add_comma
       cat <<EOF
@@ -351,19 +358,22 @@ setup_service() {
   cat >"$SB_SVC" <<'EOF'
 [Unit]
 Description=sing-box
-After=network.target
+After=network.target nss-lookup.target
 
 [Service]
 ExecStart=/usr/local/bin/sing-box run -c /etc/sing-box/config.json
 Restart=on-failure
 User=root
+# If you later switch to a non-root user, add capabilities below:
+# CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
+# AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
 LimitNOFILE=1048576
 
 [Install]
 WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
-  "$SB_BIN" check -c "$SB_CONF"
+  /usr/local/bin/sing-box check -c "$SB_CONF"
   systemctl enable --now sing-box
 }
 
