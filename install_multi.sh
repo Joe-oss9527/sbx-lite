@@ -67,8 +67,8 @@ have(){ command -v "$1" >/dev/null 2>&1; }
 
 port_in_use() {
   local p="$1"
-  ss -lntp 2>/dev/null | grep -q ":$p " && return 0
-  lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null | grep -q ":$p" && return 0
+  ss -lntp 2>/dev/null | grep -q ":$p\\b" && return 0
+  lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null | grep -q ":$p\\b" && return 0
   return 1
 }
 # -----------------------------------------------------------
@@ -98,15 +98,15 @@ detect_arch() {
 # Build a fallback asset URL if the API asset lookup fails.
 build_asset_url_fallback() {
   local tag="$1" arch="$2"
-  # Release assets are typically named: sing-box-<version>-linux-amd64.tar.gz
   local ver="${tag#v}"
   echo "https://github.com/SagerNet/sing-box/releases/download/${tag}/sing-box-${ver}-${arch}.tar.gz"
 }
 
 download_singbox() {
   if [[ -x "$SB_BIN" ]]; then msg "sing-box exists at $SB_BIN"; return; fi
-  local arch="$(detect_arch)"
-  local tmp; tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' RETURN
+  local arch; arch="$(detect_arch)"
+  local tmp; tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
 
   local api url tag raw
   if [[ -n "$SINGBOX_VERSION" ]]; then
@@ -120,12 +120,10 @@ download_singbox() {
   if have curl; then raw="$(curl -fsSL "$api")"; else raw="$(wget -qO- "$api")"; fi
   [[ -n "${raw:-}" ]] || die "Failed to query GitHub API."
 
-  # If latest, get tag_name for logging.
   if [[ -z "$SINGBOX_VERSION" ]]; then
     tag="$(printf '%s' "$raw" | jq -r .tag_name)"
   fi
 
-  # Pick the asset matching our arch.
   url="$(printf '%s' "$raw" | jq -r --arg a "$arch" '.assets[]? | select(.name|test($a) and endswith(".tar.gz")) | .browser_download_url' | head -1)"
   if [[ -z "$url" || "$url" == "null" ]]; then
     warn "Asset not found in API; falling back to guessed URL pattern."
@@ -136,10 +134,8 @@ download_singbox() {
   local pkg="$tmp/sb.tgz"
   if have curl; then curl -fsSL "$url" -o "$pkg"; else wget -qO "$pkg" "$url"; fi
 
-  # Extract (fixed: do NOT duplicate -f)
   tar -xzf "$pkg" -C "$tmp"
 
-  # Find the binary
   local bin
   bin="$(find "$tmp" -type f -name 'sing-box' | head -1)"
   [[ -n "$bin" ]] || die "sing-box binary not found in package"
@@ -161,7 +157,7 @@ acme_install() {
 }
 
 acme_issue_cf_dns() {
-  [[ -n "$CF_Token" ]] || die "CF_Token is required for CERT_MODE=cf_dns"
+  [[ -n "${CF_Token:-}" ]] || die "CF_Token is required for CERT_MODE=cf_dns"
   export CF_Token CF_Zone_ID CF_Account_ID
   local ac="$HOME/.acme.sh/acme.sh"
   "$ac" --issue -d "$DOMAIN" --dns dns_cf -k ec-256 --server letsencrypt
@@ -186,11 +182,14 @@ acme_issue_le_http() {
 }
 
 maybe_issue_cert() {
-  [[ -n "$CERT_MODE" ]] || return 0
+  # FIX: 先识别“已提供证书”，即使 CERT_MODE 为空也启用
   if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" && -f "$CERT_FULLCHAIN" && -f "$CERT_KEY" ]]; then
     msg "Using provided certificate paths."
     return 0
   fi
+
+  # 需要 ACME 时再执行
+  [[ -n "$CERT_MODE" ]] || return 0
   acme_install
   case "$CERT_MODE" in
     cf_dns)  acme_issue_cf_dns ;;
@@ -338,7 +337,7 @@ LimitNOFILE=1048576
 WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
-  "$SB_BIN" check -c "$SB_CONF"
+  /usr/local/bin/sing-box check -c /etc/sing-box/config.json
   systemctl enable --now sing-box
 }
 
@@ -387,6 +386,7 @@ install_flow() {
   ensure_tools
   download_singbox
   gen_materials
+  # 如提供证书或指定 ACME，处理证书
   if [[ -n "$CERT_MODE" || ( -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" ) ]]; then
     maybe_issue_cert
   fi
