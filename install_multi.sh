@@ -637,6 +637,119 @@ EOF
   systemctl enable --now sing-box
 }
 
+create_manager_script() {
+  msg "Creating management script ..."
+  cat >/usr/local/bin/sbx-manager <<'EOF'
+#!/bin/bash
+# sbx-manager - sing-box management tool
+
+# Color definitions
+G='\033[0;32m'
+Y='\033[0;33m'
+R='\033[0;31m'
+B='\033[1m'
+CYAN='\033[0;36m'
+N='\033[0m'
+
+case "$1" in
+    status)
+        echo -e "${B}=== Service Status ===${N}"
+        echo "[sing-box]"
+        systemctl is-active --quiet sing-box && echo -e "Status: ${G}Running${N}" || echo -e "Status: ${R}Stopped${N}"
+        echo "PID: $(systemctl show -p MainPID --value sing-box)"
+        echo
+        systemctl status sing-box --no-pager | head -10
+        ;;
+        
+    info|show)
+        if [[ ! -f "/etc/sing-box/client-info.txt" ]]; then
+            echo -e "${R}[ERR]${N} Client info not found."
+            exit 1
+        fi
+        
+        # Load saved info
+        source /etc/sing-box/client-info.txt
+        
+        echo
+        printf "${B}=== sing-box Configuration ===${N}\n"
+        echo "Domain    : ${DOMAIN}"
+        echo "Binary    : /usr/local/bin/sing-box"
+        echo "Config    : /etc/sing-box/config.json"
+        echo "Service   : systemctl status sing-box"
+        echo
+        
+        # Reality
+        echo "INBOUND   : VLESS-REALITY  ${REALITY_PORT}/tcp"
+        echo "  PublicKey = ${PUBLIC_KEY}"
+        echo "  Short ID  = ${SHORT_ID}"
+        echo "  UUID      = ${UUID}"
+        URI_REAL="vless://${UUID}@${DOMAIN}:${REALITY_PORT}?encryption=none&security=reality&flow=xtls-rprx-vision&sni=${SNI}&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&type=tcp&fp=chrome#Reality-${DOMAIN}"
+        echo "  URI       = ${URI_REAL}"
+        
+        # WebSocket (if cert exists)
+        if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" ]]; then
+            echo
+            echo "INBOUND   : VLESS-WS-TLS   ${WS_PORT}/tcp"
+            echo "  CERT     = ${CERT_FULLCHAIN}"
+            URI_WS="vless://${UUID}@${DOMAIN}:${WS_PORT}?encryption=none&security=tls&type=ws&host=${DOMAIN}&path=/ws&sni=${DOMAIN}&fp=chrome#WS-TLS-${DOMAIN}"
+            echo "  URI      = ${URI_WS}"
+            echo
+            echo "INBOUND   : Hysteria2      ${HY2_PORT}/udp"
+            echo "  CERT     = ${CERT_FULLCHAIN}"
+            URI_HY2="hysteria2://${HY2_PASS}@${DOMAIN}:${HY2_PORT}/?sni=${DOMAIN}&alpn=h3&insecure=0#Hysteria2-${DOMAIN}"
+            echo "  URI      = ${URI_HY2}"
+        fi
+        echo
+        echo -e "${Y}Notes${N}: Reality/Hy2 建议灰云；WS-TLS 可灰/橙云。"
+        ;;
+        
+    restart)
+        systemctl restart sing-box
+        echo -e "${G}✓${N} Service restarted"
+        sleep 1
+        systemctl is-active --quiet sing-box && echo -e "Status: ${G}Running${N}" || echo -e "Status: ${R}Failed${N}"
+        ;;
+        
+    start)
+        systemctl start sing-box
+        echo -e "${G}✓${N} Service started"
+        ;;
+        
+    stop)
+        systemctl stop sing-box
+        echo -e "${Y}✓${N} Service stopped"
+        ;;
+        
+    log|logs)
+        echo -e "${CYAN}Live logs (Ctrl+C to exit):${N}"
+        journalctl -u sing-box -f
+        ;;
+        
+    check)
+        echo -e "${CYAN}Checking configuration...${N}"
+        /usr/local/bin/sing-box check -c /etc/sing-box/config.json && echo -e "${G}✓ Configuration valid${N}" || echo -e "${R}✗ Configuration invalid${N}"
+        ;;
+        
+    *)
+        echo "Usage: $0 {status|info|restart|start|stop|log|check}"
+        echo "  status   - Check service status"
+        echo "  info     - Show client configuration"  
+        echo "  restart  - Restart service"
+        echo "  start    - Start service"
+        echo "  stop     - Stop service"
+        echo "  log      - View live logs"
+        echo "  check    - Validate configuration"
+        ;;
+esac
+EOF
+  chmod +x /usr/local/bin/sbx-manager
+  
+  # Create short alias
+  ln -sf /usr/local/bin/sbx-manager /usr/local/bin/sbx
+  
+  success "Management commands installed: sbx-manager (or sbx)"
+}
+
 validate_service() {
   local service_name="$1"
   msg "Checking $service_name service status..."
@@ -679,28 +792,47 @@ print_summary() {
   echo "  PublicKey = ${PUB}"
   echo "  Short ID  = ${SID}"
   echo "  UUID      = ${UUID}"
-  local uri_real="vless://${UUID}@${DOMAIN}:${REALITY_PORT_CHOSEN}?encryption=none&security=reality&flow=xtls-rprx-vision&sni=${SNI_DEFAULT}&pbk=${PUB}&sid=${SID}&type=tcp&fp=chrome"
+  local uri_real="vless://${UUID}@${DOMAIN}:${REALITY_PORT_CHOSEN}?encryption=none&security=reality&flow=xtls-rprx-vision&sni=${SNI_DEFAULT}&pbk=${PUB}&sid=${SID}&type=tcp&fp=chrome#Reality-${DOMAIN}"
   echo "  URI       = ${uri_real}"
   if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" ]]; then
     echo
     echo "INBOUND   : VLESS-WS-TLS   ${WS_PORT_CHOSEN}/tcp"
     echo "  CERT     = ${CERT_FULLCHAIN}"
-    local uri_ws="vless://${UUID}@${DOMAIN}:${WS_PORT_CHOSEN}?encryption=none&security=tls&type=ws&host=${DOMAIN}&path=/ws&sni=${DOMAIN}&fp=chrome"
+    local uri_ws="vless://${UUID}@${DOMAIN}:${WS_PORT_CHOSEN}?encryption=none&security=tls&type=ws&host=${DOMAIN}&path=/ws&sni=${DOMAIN}&fp=chrome#WS-TLS-${DOMAIN}"
     echo "  URI      = ${uri_ws}"
     echo
     echo "INBOUND   : Hysteria2      ${HY2_PORT_CHOSEN}/udp"
     echo "  CERT     = ${CERT_FULLCHAIN}"
-    local uri_hy2="hysteria2://${HY2_PASS}@${DOMAIN}:${HY2_PORT_CHOSEN}/?sni=${DOMAIN}&alpn=h3&insecure=0"
+    local uri_hy2="hysteria2://${HY2_PASS}@${DOMAIN}:${HY2_PORT_CHOSEN}/?sni=${DOMAIN}&alpn=h3&insecure=0#Hysteria2-${DOMAIN}"
     echo "  URI      = ${uri_hy2}"
   fi
   echo
   echo -e "${Y}Notes${N}: Reality/Hy2 建议灰云；WS-TLS 可灰/橙云。DNS-01 推荐；HTTP-01 需 :80 可达且未被占用。"
   echo
   echo -e "${CYAN}Management Commands:${N}"
-  echo -e "  ${G}systemctl status sing-box${N}     - Check service status"
-  echo -e "  ${G}systemctl restart sing-box${N}    - Restart service"  
-  echo -e "  ${G}journalctl -u sing-box -f${N}     - View live logs"
-  echo -e "  ${G}$SB_BIN check -c $SB_CONF${N}     - Validate configuration"
+  echo -e "  ${G}sbx info${N}          - Show configuration and URIs"
+  echo -e "  ${G}sbx status${N}        - Check service status"
+  echo -e "  ${G}sbx restart${N}       - Restart service"  
+  echo -e "  ${G}sbx log${N}           - View live logs"
+  echo -e "  ${G}sbx check${N}         - Validate configuration"
+  echo ""
+  echo -e "  Full command: ${G}sbx-manager${N}, short alias: ${G}sbx${N}"
+  
+  # Save client info for later retrieval
+  cat > /etc/sing-box/client-info.txt <<EOF
+DOMAIN=${DOMAIN}
+REALITY_PORT=${REALITY_PORT_CHOSEN}
+WS_PORT=${WS_PORT_CHOSEN}
+HY2_PORT=${HY2_PORT_CHOSEN}
+UUID=${UUID}
+PUBLIC_KEY=${PUB}
+SHORT_ID=${SID}
+HY2_PASS=${HY2_PASS}
+CERT_FULLCHAIN=${CERT_FULLCHAIN}
+CERT_KEY=${CERT_KEY}
+SNI=${SNI_DEFAULT}
+EOF
+  chmod 600 /etc/sing-box/client-info.txt
 }
 
 print_upgrade_summary() {
@@ -717,10 +849,13 @@ print_upgrade_summary() {
   success "Binary upgrade completed successfully!"
   echo
   echo -e "${CYAN}Management Commands:${N}"
-  echo -e "  ${G}systemctl status sing-box${N}     - Check service status"
-  echo -e "  ${G}systemctl restart sing-box${N}    - Restart service"  
-  echo -e "  ${G}journalctl -u sing-box -f${N}     - View live logs"
-  echo -e "  ${G}$SB_BIN check -c $SB_CONF${N}     - Validate configuration"
+  echo -e "  ${G}sbx info${N}          - Show configuration and URIs"
+  echo -e "  ${G}sbx status${N}        - Check service status"
+  echo -e "  ${G}sbx restart${N}       - Restart service"  
+  echo -e "  ${G}sbx log${N}           - View live logs"
+  echo -e "  ${G}sbx check${N}         - Validate configuration"
+  echo ""
+  echo -e "  Full command: ${G}sbx-manager${N}, short alias: ${G}sbx${N}"
   echo
   info "To reconfigure with new parameters, run the script again and choose 'Reconfigure'"
 }
@@ -743,6 +878,7 @@ install_flow() {
     fi
     write_config
     setup_service
+    create_manager_script
   else
     success "Binary upgrade completed, preserving existing configuration"
     # Just restart the service with existing config
@@ -776,6 +912,7 @@ uninstall_flow() {
   [[ -f "$SB_CONF" ]] && echo "  - Config: $SB_CONF"
   [[ -d "$SB_CONF_DIR" ]] && echo "  - Config directory: $SB_CONF_DIR"
   [[ -f "$SB_SVC" ]] && echo "  - Service: $SB_SVC"
+  [[ -x "/usr/local/bin/sbx-manager" ]] && echo "  - Management commands: sbx-manager, sbx"
   [[ -d "/etc/ssl/sbx" ]] && echo "  - Certificates: /etc/ssl/sbx"
   echo "  - Firewall rules for common ports"
   
@@ -795,6 +932,10 @@ uninstall_flow() {
   
   msg "Removing binary..."
   rm -f "$SB_BIN"
+  
+  msg "Removing management scripts..."
+  rm -f /usr/local/bin/sbx-manager
+  rm -f /usr/local/bin/sbx
   
   msg "Removing configuration directory..."
   rm -rf "$SB_CONF_DIR"

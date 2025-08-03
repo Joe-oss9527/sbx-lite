@@ -52,16 +52,34 @@ FORCE=1 bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/m
 
 ## 📋 管理命令
 
+安装后会自动创建管理命令 `sbx`（全称 `sbx-manager`）：
+
 ```bash
-# 检查状态
-systemctl status sing-box
-journalctl -u sing-box -f
+# 查看配置信息（包含所有 URI）
+sbx info
+
+# 检查服务状态
+sbx status
 
 # 重启服务
-systemctl restart sing-box
+sbx restart
+
+# 查看实时日志
+sbx log
 
 # 验证配置
-sing-box check -c /etc/sing-box/config.json
+sbx check
+
+# 启动/停止服务
+sbx start
+sbx stop
+```
+
+**传统 systemctl 命令仍然可用**：
+```bash
+systemctl status sing-box
+systemctl restart sing-box
+journalctl -u sing-box -f
 ```
 
 **配置文件位置**：`/etc/sing-box/config.json`  
