@@ -90,12 +90,16 @@ sbx check
 - JSON config built via string concatenation, not jq (reduces dependencies)
 - Validate generated short_id immediately after creation with die() on failure
 - Always use `openssl rand -hex 4` for 8-character short_ids (not -hex 8)
+- **ATOMIC CONFIG WRITES**: Use temporary files and validation before applying (see write_config() function)
+- Certificate validation includes expiry checks and key compatibility verification
 
 ### Service Management Best Practices  
 - Fresh install: Stop service → Wait 10s for shutdown → Check ports → Continue
 - Use `systemctl is-active sing-box >/dev/null 2>&1` for status checks
 - Port allocation: 3 retries with 2-second intervals before fallback
 - Both primary and fallback ports must be validated before proceeding
+- **CRITICAL**: Service restart required after config changes (see setup_service() function)
+- Post-allocation port validation prevents race conditions (see gen_materials() function)
 
 ### Installation Flow States
 1. **Fresh install** - Stops service, backs up config to `.backup.YYYYMMDD_HHMMSS`, clean reinstall
@@ -125,3 +129,10 @@ sbx check
 - v2rayN users must switch from Xray core to sing-box core in client settings
 - Generated URIs include aliases: `#Reality-domain`, `#WS-TLS-domain`, `#Hysteria2-domain`
 - Short IDs are 8 characters (sing-box limit), not 16 characters (Xray limit)
+
+## Recent Critical Fixes (2025-08)
+- **Fresh Install Service Issue**: Fixed Hysteria2 not working after Fresh install by implementing proper service restart logic
+- **Port Allocation Race Conditions**: Added post-allocation validation to prevent port conflicts
+- **Configuration Atomicity**: Implemented atomic config file operations with validation before applying
+- **Certificate Security**: Enhanced certificate validation with expiry warnings and key compatibility checks
+- **Service Startup Verification**: Added retry logic and port listening validation after service start

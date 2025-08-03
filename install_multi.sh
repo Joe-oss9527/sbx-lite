@@ -577,12 +577,24 @@ gen_materials() {
   REALITY_PORT_CHOSEN="$(allocate_port "$REALITY_PORT" "$REALITY_PORT_FALLBACK" "Reality")"
   WS_PORT_CHOSEN="$(allocate_port "$WS_PORT" "$WS_PORT_FALLBACK" "WebSocket")"
   HY2_PORT_CHOSEN="$(allocate_port "$HY2_PORT" "$HY2_PORT_FALLBACK" "Hysteria2")"
+  
+  # Validate all ports are available after allocation
+  for port_info in "Reality:$REALITY_PORT_CHOSEN" "WebSocket:$WS_PORT_CHOSEN" "Hysteria2:$HY2_PORT_CHOSEN"; do
+    port_name="${port_info%%:*}"
+    port_num="${port_info##*:}"
+    if port_in_use "$port_num"; then
+      die "$port_name port $port_num is still in use after allocation. Please check for conflicts."
+    fi
+  done
 }
 
 write_config() {
   msg "Writing $SB_CONF ..."
   mkdir -p "$SB_CONF_DIR"
-  : >"$SB_CONF"
+  
+  # Create temporary file for atomic write
+  local temp_conf="${SB_CONF}.tmp"
+  : >"$temp_conf"
   {
     echo '{'
     printf '  "log": { "level": "%s" },\n' "$LOG_LEVEL"
@@ -620,6 +632,20 @@ EOF
 
     # ---- Optional WS-TLS / Hy2 if cert is available ----
     if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" && -f "$CERT_FULLCHAIN" && -f "$CERT_KEY" ]]; then
+      # Enhanced certificate validation
+      [[ -r "$CERT_FULLCHAIN" ]] || die "Certificate file not readable: $CERT_FULLCHAIN"
+      [[ -r "$CERT_KEY" ]] || die "Private key file not readable: $CERT_KEY"
+      
+      # Check certificate validity
+      if ! openssl x509 -checkend 86400 -noout -in "$CERT_FULLCHAIN" >/dev/null 2>&1; then
+        warn "Certificate will expire within 24 hours: $CERT_FULLCHAIN"
+      fi
+      
+      # Verify certificate and key match
+      if ! openssl x509 -noout -modulus -in "$CERT_FULLCHAIN" | openssl md5 >/dev/null 2>&1 || \
+         ! openssl rsa -noout -modulus -in "$CERT_KEY" | openssl md5 >/dev/null 2>&1; then
+        warn "Could not verify certificate and key compatibility"
+      fi
       add_comma
       cat <<EOF
       {
@@ -666,13 +692,20 @@ EOF
     echo '  ],'
     echo '  "outbounds": [ { "type": "direct", "tag": "direct" }, { "type": "block", "tag": "block" } ]'
     echo '}'
-  } >>"$SB_CONF"
+  } >>"$temp_conf"
+  
+  # Validate configuration syntax before applying
+  if ! /usr/local/bin/sing-box check -c "$temp_conf" >/dev/null 2>&1; then
+    rm -f "$temp_conf"
+    die "Generated configuration is invalid. Please check your settings."
+  fi
+  
+  # Atomic move to final location
+  mv "$temp_conf" "$SB_CONF"
   
   # Set secure permissions for configuration file
   chmod 600 "$SB_CONF"
   chown root:root "$SB_CONF"
-  
-  "$SB_BIN" check -c "$SB_CONF" || die "Invalid sing-box configuration"
 }
 
 setup_service() {
@@ -696,7 +729,40 @@ WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
   /usr/local/bin/sing-box check -c "$SB_CONF"
-  systemctl enable --now sing-box
+  
+  # Enable service if not already enabled
+  if ! systemctl is-enabled sing-box >/dev/null 2>&1; then
+    systemctl enable sing-box
+  fi
+  
+  # Start or restart service to apply new configuration
+  if systemctl is-active sing-box >/dev/null 2>&1; then
+    msg "Restarting sing-box service to apply new configuration..."
+    systemctl restart sing-box
+  else
+    msg "Starting sing-box service..."
+    systemctl start sing-box
+  fi
+  
+  # Wait for service to fully start and verify it's working
+  local retry=0
+  while [[ $retry -lt 10 ]]; do
+    if systemctl is-active sing-box >/dev/null 2>&1; then
+      # Additional check: verify ports are actually listening
+      sleep 2
+      if ss -tlnp | grep -q ":${REALITY_PORT_CHOSEN:-443} " && \
+         ss -ulnp | grep -q ":${HY2_PORT_CHOSEN:-8443} "; then
+        success "Service started successfully and ports are listening"
+        break
+      fi
+    fi
+    sleep 1
+    ((retry++))
+  done
+  
+  if [[ $retry -ge 10 ]]; then
+    warn "Service may not have started properly. Check logs with: journalctl -u sing-box -n 20"
+  fi
 }
 
 create_manager_script() {
