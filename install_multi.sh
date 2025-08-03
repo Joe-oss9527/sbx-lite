@@ -19,6 +19,24 @@
 
 set -euo pipefail
 
+# ASCII Art Logo
+show_logo() {
+  clear
+  echo
+  echo -e "${BLUE}███████╗${CYAN}██████╗ ${PURPLE}██╗  ██╗    ${G}██╗     ${Y}██╗${R}████████╗${G}███████╗${N}"
+  echo -e "${BLUE}██╔════╝${CYAN}██╔══██╗${PURPLE}╚██╗██╔╝    ${G}██║     ${Y}██║${R}╚══██╔══╝${G}██╔════╝${N}"
+  echo -e "${BLUE}███████╗${CYAN}██████╔╝${PURPLE} ╚███╔╝ ${N}███╗${G}██║     ${Y}██║${R}   ██║   ${G}█████╗  ${N}"
+  echo -e "${BLUE}╚════██║${CYAN}██╔══██╗${PURPLE} ██╔██╗ ${N}╚══╝${G}██║     ${Y}██║${R}   ██║   ${G}██╔══╝  ${N}"
+  echo -e "${BLUE}███████║${CYAN}██████╔╝${PURPLE}██╔╝ ██╗    ${G}███████╗${Y}██║${R}   ██║   ${G}███████╗${N}"
+  echo -e "${BLUE}╚══════╝${CYAN}╚═════╝ ${PURPLE}╚═╝  ╚═╝    ${G}╚══════╝${Y}╚═╝${R}   ╚═╝   ${G}╚══════╝${N}"
+  echo
+  echo -e "    ${B}${CYAN}🚀 Sing-Box Official One-Click Deployment Script${N}"
+  echo -e "    ${Y}📦 Multi-Protocol: REALITY + WS-TLS + Hysteria2${N}"
+  echo -e "    ${G}⚡ Version: Latest | Author: YYvanYang${N}"
+  echo -e "${G}================================================================${N}"
+  echo
+}
+
 SB_BIN="/usr/local/bin/sing-box"
 SB_CONF_DIR="/etc/sing-box"
 SB_CONF="$SB_CONF_DIR/config.json"
@@ -649,7 +667,18 @@ Y='\033[0;33m'
 R='\033[0;31m'
 B='\033[1m'
 CYAN='\033[0;36m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
 N='\033[0m'
+
+# Simple logo for management tool
+show_sbx_logo() {
+  echo
+  echo -e "${B}${CYAN}█▀▀ █▄▄ ▀▄▀   █▀▄▀█ ▄▀█ █▄ █ ▄▀█ █▀▀ █▀▀ █▀█${N}"
+  echo -e "${B}${BLUE}▄██ █▄█  █    █ ▀ █ █▀█ █ ▀█ █▀█ █▄█ ██▄ █▀▄${N}"
+  echo -e "${G}================================================${N}"
+  echo
+}
 
 case "$1" in
     status)
@@ -666,6 +695,8 @@ case "$1" in
             echo -e "${R}[ERR]${N} Client info not found."
             exit 1
         fi
+        
+        show_sbx_logo
         
         # Load saved info
         source /etc/sing-box/client-info.txt
@@ -861,6 +892,7 @@ print_upgrade_summary() {
 }
 
 install_flow() {
+  show_logo
   need_root
   
   # Enhanced installation detection and management
@@ -903,6 +935,7 @@ install_flow() {
 }
 
 uninstall_flow() {
+  show_logo
   need_root
   
   # Show what will be removed
