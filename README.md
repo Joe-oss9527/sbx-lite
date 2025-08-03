@@ -75,6 +75,7 @@ sing-box check -c /etc/sing-box/config.json
 - 确认域名是灰云（DNS only）
 - 检查 443 端口是否被占用
 - 确认系统时间正确
+- **v2rayN 用户**：需要在设置中将 VLESS 内核切换为 sing-box（默认是 Xray）
 
 **Hysteria2 不工作**
 - 确认有证书且 UDP 端口开放
@@ -82,6 +83,16 @@ sing-box check -c /etc/sing-box/config.json
 
 **重新配置**
 - 直接重新运行安装命令即可覆盖
+
+## 🔨 客户端兼容性
+
+**sing-box 服务端兼容的客户端**：
+- **NekoRay/NekoBox**（推荐，原生支持 sing-box）
+- **v2rayN**（需切换内核：设置 → Core 类型设置 → VLESS → 选择 sing-box）
+- **Shadowrocket**（iOS）
+- **sing-box 官方客户端**
+
+**注意**：v2rayN 默认使用 Xray 内核，需要手动切换到 sing-box 内核才能连接本脚本部署的 Reality 服务。
 
 ---
 
