@@ -509,7 +509,7 @@ gen_materials() {
   read PRIV PUB < <("$SB_BIN" generate reality-keypair | awk '/PrivateKey:/{p=$2} /PublicKey:/{q=$2} END{print p" "q}')
   [[ -n "$PRIV" && -n "$PUB" ]] || die "Failed to generate Reality keypair"
   UUID="$(cat /proc/sys/kernel/random/uuid)"
-  SID="$(openssl rand -hex 4)"              
+  SID="$(openssl rand -hex 8)"              
   HY2_PASS="$(openssl rand -hex 16)"
 
   REALITY_PORT_CHOSEN="$(allocate_port "$REALITY_PORT" "$REALITY_PORT_FALLBACK" "Reality")"
