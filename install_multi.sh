@@ -98,11 +98,28 @@ port_in_use() {
 
 allocate_port() {
   local port="$1" fallback="$2" name="$3"
-  if port_in_use "$port"; then
-    warn "$name port $port in use; switching to $fallback"
+  local retry_count=0
+  local max_retries=3
+  
+  # First try the preferred port with retries
+  while [[ $retry_count -lt $max_retries ]]; do
+    if ! port_in_use "$port"; then
+      echo "$port"
+      return 0
+    fi
+    if [[ $retry_count -eq 0 ]]; then
+      msg "$name port $port in use, retrying in 2 seconds..."
+    fi
+    sleep 2
+    ((retry_count++))
+  done
+  
+  # Try fallback port
+  if ! port_in_use "$fallback"; then
+    warn "$name port $port persistently in use; switching to $fallback"
     echo "$fallback"
   else
-    echo "$port"
+    die "Both $name ports $port and $fallback are in use. Please free up these ports or specify different ones."
   fi
 }
 
@@ -223,9 +240,36 @@ check_existing_installation() {
     set +e
     while true; do
       read -rp "Choose [1-6]: " choice
+      # Validate input to prevent injection
+      if [[ ! "$choice" =~ ^[1-6]$ ]]; then
+        err "Invalid choice. Please select 1-6."
+        continue
+      fi
       case "${choice}" in
         1)
           msg "Proceeding with fresh installation..."
+          # Stop service first to free up ports
+          if systemctl is-active sing-box >/dev/null 2>&1; then
+            msg "Stopping existing sing-box service..."
+            systemctl stop sing-box
+            # Wait for ports to be released
+            local count=0
+            while systemctl is-active sing-box >/dev/null 2>&1 && [[ $count -lt 10 ]]; do
+              sleep 1
+              ((count++))
+            done
+            if [[ $count -ge 10 ]]; then
+              warn "Service took longer than expected to stop, continuing anyway..."
+            else
+              msg "Service stopped successfully"
+            fi
+          fi
+          # Backup existing config
+          if [[ -f "$SB_CONF" ]]; then
+            local backup_file="${SB_CONF}.backup.$(date +%Y%m%d_%H%M%S)"
+            msg "Backing up existing config to: $backup_file"
+            cp "$SB_CONF" "$backup_file"
+          fi
           break
           ;;
         2)
@@ -265,9 +309,6 @@ check_existing_installation() {
         6)
           echo "Installation cancelled."
           exit 0
-          ;;
-        *)
-          err "Invalid choice. Please select 1-6."
           ;;
       esac
     done
@@ -527,7 +568,10 @@ gen_materials() {
   read PRIV PUB < <("$SB_BIN" generate reality-keypair | awk '/PrivateKey:/{p=$2} /PublicKey:/{q=$2} END{print p" "q}')
   [[ -n "$PRIV" && -n "$PUB" ]] || die "Failed to generate Reality keypair"
   UUID="$(cat /proc/sys/kernel/random/uuid)"
-  SID="$(openssl rand -hex 8)"              
+  SID="$(openssl rand -hex 4)"
+  # Validate short_id format (sing-box requires hex string, max 8 chars)
+  [[ "$SID" =~ ^[0-9a-fA-F]{1,8}$ ]] || die "Invalid short ID format: $SID"
+  [[ ${#SID} -le 8 ]] || die "Short ID too long (max 8 chars): $SID"
   HY2_PASS="$(openssl rand -hex 16)"
 
   REALITY_PORT_CHOSEN="$(allocate_port "$REALITY_PORT" "$REALITY_PORT_FALLBACK" "Reality")"
