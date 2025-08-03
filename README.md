@@ -1,17 +1,6 @@
 # sbx-lite - 官方 sing-box 一键部署
 
-```
-███████╗██████╗ ██╗  ██╗    ██╗     ██╗████████╗███████╗
-██╔════╝██╔══██╗╚██╗██╔╝    ██║     ██║╚══██╔══╝██╔════╝
-███████╗██████╔╝ ╚███╔╝ ███╗██║     ██║   ██║   █████╗  
-╚════██║██╔══██╗ ██╔██╗ ╚══╝██║     ██║   ██║   ██╔══╝  
-███████║██████╔╝██╔╝ ██╗    ███████╗██║   ██║   ███████╗
-╚══════╝╚═════╝ ╚═╝  ╚═╝    ╚══════╝╚═╝   ╚═╝   ╚══════╝
-
-🚀 Sing-Box Official One-Click Deployment Script
-📦 Multi-Protocol: REALITY + WS-TLS + Hysteria2
-⚡ Version: Latest | Author: YYvanYang
-```
+![SBX-LITE Logo](screenshot.png)
 
 **一键部署官方 sing-box**，默认启用 **VLESS-REALITY**（无证书、抗探测），可选启用 **VLESS-WS-TLS** 和 **Hysteria2**。安装完成自动打印客户端 URI。
 
