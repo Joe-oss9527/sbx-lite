@@ -19,6 +19,35 @@
 
 set -euo pipefail
 
+# Cleanup function for temporary files and error recovery
+cleanup() {
+  local exit_code=$?
+  if [[ $exit_code -ne 0 ]]; then
+    err "Script execution failed with exit code $exit_code"
+  fi
+  
+  # Clean up temporary files (avoid globbing issues)
+  rm -f "${SB_CONF}.tmp" 2>/dev/null || true
+  find /tmp -maxdepth 1 -name 'sb*' -type f -mmin +10 -delete 2>/dev/null || true
+  find /tmp -maxdepth 1 -name 'sing-box*' -type f -mmin +10 -delete 2>/dev/null || true
+  
+  # Clean up any acme temp files
+  [[ -d "/tmp/.acme.sh" ]] && rm -rf "/tmp/.acme.sh" 2>/dev/null || true
+  
+  # If we're in the middle of an upgrade/install and something fails,
+  # try to restore service if it was previously running
+  if [[ $exit_code -ne 0 && -f "$SB_SVC" ]]; then
+    if systemctl is-enabled sing-box >/dev/null 2>&1; then
+      systemctl start sing-box 2>/dev/null || true
+    fi
+  fi
+  
+  exit $exit_code
+}
+
+# Enhanced error handling with cleanup
+trap cleanup EXIT INT TERM
+
 # ASCII Art Logo
 show_logo() {
   clear
@@ -89,6 +118,56 @@ die(){ err "$*"; exit 1; }
 need_root(){ [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "Please run as root (sudo)."; }
 have(){ command -v "$1" >/dev/null 2>&1; }
 
+# Auto-detect server public IP for Reality-only mode
+get_public_ip() {
+  local ip="" service
+  local services=("https://ipv4.icanhazip.com" "https://api.ipify.org" "https://ifconfig.me/ip" "https://ipinfo.io/ip")
+  
+  # Try multiple IP detection services for redundancy
+  for service in "${services[@]}"; do
+    if have curl; then
+      ip=$(timeout 5 curl -s --max-time 5 "$service" 2>/dev/null | grep -E '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$' | head -1)
+    elif have wget; then
+      ip=$(timeout 5 wget -qO- --timeout=5 "$service" 2>/dev/null | grep -E '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$' | head -1)
+    else
+      break
+    fi
+    
+    # Validate the detected IP more thoroughly
+    if [[ -n "$ip" ]] && validate_ip_address "$ip"; then
+      echo "$ip"
+      return 0
+    fi
+  done
+  
+  return 1
+}
+
+# Enhanced IP address validation
+validate_ip_address() {
+  local ip="$1"
+  # Basic format check
+  [[ "$ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || return 1
+  
+  # Check each octet is in valid range (0-255)
+  local IFS='.'
+  local -a octets=($ip)
+  for octet in "${octets[@]}"; do
+    # Remove leading zeros and check range
+    octet=$((10#$octet))
+    [[ $octet -le 255 ]] || return 1
+  done
+  
+  # Check for reserved/invalid ranges (but allow private IPs for VPS environments)
+  [[ ! "$ip" =~ ^0\. ]] || return 1        # 0.x.x.x
+  [[ ! "$ip" =~ ^127\. ]] || return 1      # 127.x.x.x (loopback) 
+  [[ ! "$ip" =~ ^169\.254\. ]] || return 1 # 169.254.x.x (link-local)
+  [[ ! "$ip" =~ ^22[4-9]\. ]] || return 1  # 224.x.x.x+ (multicast)
+  [[ ! "$ip" =~ ^2[4-5][0-9]\. ]] || return 1 # 240.x.x.x+ (reserved)
+  
+  return 0
+}
+
 port_in_use() {
   local p="$1"
   ss -lntp 2>/dev/null | grep -q ":$p " && return 0
@@ -123,25 +202,78 @@ allocate_port() {
   fi
 }
 
-# Input validation functions
+# Enhanced input validation functions
 validate_port() {
   local port="$1"
-  [[ "$port" =~ ^[1-9][0-9]{0,4}$ ]] && [ "$port" -le 65535 ]
+  [[ "$port" =~ ^[1-9][0-9]{0,4}$ ]] && [ "$port" -le 65535 ] && [ "$port" -ge 1 ]
 }
 
 validate_domain() {
   local domain="$1"
-  # Simple practical validation
+  # Enhanced domain validation
   [[ -n "$domain" ]] || return 1
+  # Check length (max 253 characters for FQDN)
+  [[ ${#domain} -le 253 ]] || return 1
+  # Check for valid domain format (letters, numbers, dots, hyphens only)
   [[ "$domain" =~ ^[a-zA-Z0-9.-]+$ ]] || return 1
+  # Must not start or end with hyphen or dot
+  [[ ! "$domain" =~ ^[-.]|[-.]$ ]] || return 1
+  # Must not contain consecutive dots
+  [[ ! "$domain" =~ \.\. ]] || return 1
+  # Reserved names
   [[ "$domain" != "localhost" ]] || return 1
+  [[ "$domain" != "127.0.0.1" ]] || return 1
+  [[ ! "$domain" =~ ^[0-9.]+$ ]] || return 1  # Not an IP address
   return 0
 }
 
 validate_cert_files() {
   local fullchain="$1" key="$2"
-  # Simple file existence check
-  [[ -n "$fullchain" && -n "$key" && -f "$fullchain" && -f "$key" ]]
+  # Enhanced certificate file validation
+  [[ -n "$fullchain" && -n "$key" ]] || return 1
+  [[ -f "$fullchain" && -f "$key" ]] || return 1
+  [[ -r "$fullchain" && -r "$key" ]] || return 1
+  # Check if files are not empty
+  [[ -s "$fullchain" && -s "$key" ]] || return 1
+  return 0
+}
+
+# Enhanced input sanitization
+sanitize_input() {
+  local input="$1"
+  # Remove potential dangerous characters and limit length
+  input="${input//[;&|\`\$()]/}"  # Remove shell metacharacters
+  input="${input:0:256}"        # Limit length
+  printf '%s' "$input"
+}
+
+# Validate environment variables on startup
+validate_env_vars() {
+  # Validate DOMAIN if provided
+  if [[ -n "$DOMAIN" ]]; then
+    validate_domain "$DOMAIN" || die "Invalid DOMAIN format: $DOMAIN"
+  fi
+  
+  # Validate ports if overridden
+  if [[ -n "${REALITY_PORT:-}" ]]; then
+    validate_port "$REALITY_PORT" || die "Invalid REALITY_PORT: $REALITY_PORT"
+  fi
+  if [[ -n "${WS_PORT:-}" ]]; then
+    validate_port "$WS_PORT" || die "Invalid WS_PORT: $WS_PORT"
+  fi
+  if [[ -n "${HY2_PORT:-}" ]]; then
+    validate_port "$HY2_PORT" || die "Invalid HY2_PORT: $HY2_PORT"
+  fi
+  
+  # Validate certificate files if provided
+  if [[ -n "$CERT_FULLCHAIN" || -n "$CERT_KEY" ]]; then
+    validate_cert_files "$CERT_FULLCHAIN" "$CERT_KEY" || die "Invalid certificate files"
+  fi
+  
+  # Validate CERT_MODE
+  if [[ -n "$CERT_MODE" && ! "$CERT_MODE" =~ ^(cf_dns|le_http)$ ]]; then
+    die "Invalid CERT_MODE: $CERT_MODE (must be cf_dns or le_http)"
+  fi
 }
 
 get_installed_version() {
@@ -152,13 +284,44 @@ get_installed_version() {
   fi
 }
 
+# Enhanced network operation with better error handling
+safe_http_get() {
+  local url="$1" timeout="${2:-30}" max_retries="${3:-3}"
+  local retry=0 output
+  
+  while [[ $retry -lt $max_retries ]]; do
+    if have curl; then
+      if output=$(curl -fsSL "$url" --max-time "$timeout" --retry 2 --connect-timeout 10 2>/dev/null); then
+        printf '%s' "$output"
+        return 0
+      fi
+    elif have wget; then
+      if output=$(wget -qO- "$url" --timeout="$timeout" --tries=2 --connect-timeout=10 2>/dev/null); then
+        printf '%s' "$output"
+        return 0
+      fi
+    else
+      die "Neither curl nor wget available for network operations"
+    fi
+    
+    ((retry++))
+    if [[ $retry -lt $max_retries ]]; then
+      warn "Network request failed (attempt $retry/$max_retries), retrying in 2 seconds..."
+      sleep 2
+    fi
+  done
+  
+  return 1
+}
+
 get_latest_version() {
   local api_url="https://api.github.com/repos/SagerNet/sing-box/releases/latest"
-  if have curl; then
-    curl -fsSL "$api_url" --max-time 10 --retry 2 2>/dev/null | grep -o '"tag_name": "[^"]*"' | cut -d'"' -f4 | sed 's/^v//' || echo "unknown"
-  elif have wget; then
-    wget -qO- "$api_url" --timeout=10 --tries=2 2>/dev/null | grep -o '"tag_name": "[^"]*"' | cut -d'"' -f4 | sed 's/^v//' || echo "unknown"
+  local result
+  
+  if result=$(safe_http_get "$api_url" 15 2); then
+    echo "$result" | grep -o '"tag_name": "[^"]*"' | cut -d'"' -f4 | sed 's/^v//' || echo "unknown"
   else
+    warn "Failed to fetch latest version information"
     echo "unknown"
   fi
 }
@@ -171,13 +334,16 @@ compare_versions() {
   fi
   
   # Simple version comparison (works for semantic versioning)
-  printf '%s\n%s\n' "$current" "$latest" | sort -V | head -1 | grep -q "^$current$"
-  if [[ $? -eq 0 && "$current" != "$latest" ]]; then
-    echo "outdated"
-  elif [[ "$current" = "$latest" ]]; then
+  if [[ "$current" = "$latest" ]]; then
     echo "current"
   else
-    echo "newer"
+    local oldest
+    oldest=$(printf '%s\n%s\n' "$current" "$latest" | sort -V | head -1)
+    if [[ "$oldest" = "$current" ]]; then
+      echo "outdated"
+    else
+      echo "newer"
+    fi
   fi
 }
 
@@ -373,7 +539,8 @@ download_singbox() {
   fi
   local arch tmp api url tag raw
   arch="$(detect_arch)"
-  tmp="$(mktemp -d)"
+  tmp="$(mktemp -d)" || die "Failed to create secure temporary directory"
+  chmod 700 "$tmp" || { rm -rf "$tmp"; die "Failed to set secure permissions on temporary directory"; }
 
   if [[ -n "$SINGBOX_VERSION" ]]; then
     tag="$SINGBOX_VERSION"
@@ -383,12 +550,8 @@ download_singbox() {
   fi
 
   msg "Fetching sing-box release info for $arch ..."
-  if have curl; then 
-    raw="$(curl -fsSL "$api" --max-time 30 --retry 3)" || { rm -rf "$tmp"; die "Failed to query GitHub API (curl)"; }
-  else 
-    raw="$(wget -qO- "$api" --timeout=30 --tries=3)" || { rm -rf "$tmp"; die "Failed to query GitHub API (wget)"; }
-  fi
-  [[ -n "${raw:-}" ]] || { rm -rf "$tmp"; die "Failed to query GitHub API."; }
+  raw=$(safe_http_get "$api" 30 3) || { rm -rf "$tmp"; die "Failed to query GitHub API after multiple attempts"; }
+  [[ -n "${raw:-}" ]] || { rm -rf "$tmp"; die "Empty response from GitHub API"; }
 
   if [[ -z "$SINGBOX_VERSION" ]]; then
     tag="$(printf '%s' "$raw" | jq -r .tag_name)"
@@ -406,11 +569,36 @@ download_singbox() {
 
   msg "Downloading sing-box package (${tag:-unknown}) ..."
   local pkg="$tmp/sb.tgz"
-  if have curl; then 
-    curl -fsSL "$url" -o "$pkg" --max-time 300 --retry 3 || { rm -rf "$tmp"; die "Failed to download package (curl)"; }
-  else 
-    wget -qO "$pkg" "$url" --timeout=300 --tries=3 || { rm -rf "$tmp"; die "Failed to download package (wget)"; }
-  fi
+  
+  # Enhanced download with progress indication for large files
+  local download_success=false
+  local retry=0
+  local max_download_retries=3
+  
+  while [[ $retry -lt $max_download_retries && "$download_success" == "false" ]]; do
+    if have curl; then
+      if curl -fsSL "$url" -o "$pkg" --max-time 300 --retry 2 --connect-timeout 30 --progress-bar 2>/dev/null; then
+        download_success=true
+      fi
+    elif have wget; then
+      if wget -qO "$pkg" "$url" --timeout=300 --tries=2 --connect-timeout=30 --progress=dot 2>/dev/null; then
+        download_success=true
+      fi
+    else
+      { rm -rf "$tmp"; die "Neither curl nor wget available for download"; }
+    fi
+    
+    if [[ "$download_success" == "false" ]]; then
+      ((retry++))
+      if [[ $retry -lt $max_download_retries ]]; then
+        warn "Download failed (attempt $retry/$max_download_retries), retrying..."
+        sleep 3
+        rm -f "$pkg" 2>/dev/null || true
+      fi
+    fi
+  done
+  
+  [[ "$download_success" == "true" ]] || { rm -rf "$tmp"; die "Failed to download package after $max_download_retries attempts"; }
   
   if [[ -n "$expected_sha256" ]]; then
     msg "Verifying download integrity..."
@@ -435,7 +623,7 @@ acme_install() {
   msg "Installing acme.sh ..."
   
   # Use a default email for ACME installation
-  local email="admin@example.com"
+  local email="admin@yourdomain.com"
   
   if have curl; then
     curl -fsSL https://get.acme.sh | sh -s "email=${email}" >/dev/null
@@ -539,28 +727,70 @@ HY2_PASS=""
 REALITY_PORT_CHOSEN=""
 WS_PORT_CHOSEN=""
 HY2_PORT_CHOSEN=""
+REALITY_ONLY_MODE=0
 
 gen_materials() {
   if [[ -z "$DOMAIN" ]]; then
     set +e  # Temporarily disable strict mode for user input
-    echo "Please enter your domain name:"
-    echo "- Must be set to 'DNS only' (gray cloud) in Cloudflare"
-    echo "- Example: r.example.com"
-    echo "- Press Enter to skip (Reality only mode)"
+    echo "========================================"
+    echo "Server Address Configuration"
+    echo "========================================"
+    echo "Options:"
+    echo "  1. Press Enter for Reality-only (auto-detect IP)"
+    echo "  2. Enter domain name for full setup (Reality + WS-TLS + Hysteria2)"
+    echo "  3. Enter IP address manually for Reality-only"
+    echo ""
+    echo "Note: Domain must be 'DNS only' (gray cloud) in Cloudflare"
     
+    local input_attempts=0
     while true; do
-      read -rp "Domain: " DOMAIN
+      read -rp "Domain/IP (Enter for auto-detect): " DOMAIN
+      
+      # Sanitize input to prevent injection
+      DOMAIN=$(sanitize_input "$DOMAIN")
+      
       if [[ -z "$DOMAIN" ]]; then
-        warn "No domain provided. Continuing with Reality-only mode."
+        # Auto-detect IP for Reality-only mode
+        msg "No domain provided. Auto-detecting server IP for Reality-only mode..."
+        local detected_ip
+        if detected_ip=$(get_public_ip); then
+          DOMAIN="$detected_ip"
+          success "Detected server IP: $DOMAIN"
+          info "Using Reality-only mode (no certificates needed)"
+          REALITY_ONLY_MODE=1
+          break
+        else
+          err "Failed to auto-detect server IP. Please enter manually."
+          continue
+        fi
+      elif validate_ip_address "$DOMAIN"; then
+        # User entered a valid IP address
+        success "Using IP address: $DOMAIN for Reality-only mode"
+        REALITY_ONLY_MODE=1
         break
       elif validate_domain "$DOMAIN"; then
         success "Domain '$DOMAIN' is valid"
+        info "Full setup mode available (can add WS-TLS and Hysteria2 with certificates)"
+        REALITY_ONLY_MODE=0
         break
       else
-        err "Invalid domain format. Please enter a valid domain (e.g., r.example.com)"
+        err "Invalid format. Please enter a valid domain or IP address"
+        ((input_attempts++))
+        if [[ $input_attempts -ge 5 ]]; then
+          die "Too many invalid attempts. Please check your input and try again."
+        fi
       fi
     done
     set -e  # Re-enable strict mode
+  else
+    # DOMAIN was provided via environment variable
+    if validate_ip_address "$DOMAIN"; then
+      info "Using provided IP address: $DOMAIN for Reality-only mode"
+      REALITY_ONLY_MODE=1
+    else
+      info "Using provided domain: $DOMAIN"
+      REALITY_ONLY_MODE=0
+    fi
   fi
 
   msg "Generating Reality keypair / UUID / short_id / Hy2 password ..."
@@ -592,107 +822,146 @@ write_config() {
   msg "Writing $SB_CONF ..."
   mkdir -p "$SB_CONF_DIR"
   
-  # Create temporary file for atomic write
-  local temp_conf="${SB_CONF}.tmp"
-  : >"$temp_conf"
-  {
-    echo '{'
-    printf '  "log": { "level": "%s" },\n' "$LOG_LEVEL"
-    echo '  "inbounds": ['
-    local added=0
-    add_comma(){ if [[ $added -eq 1 ]]; then echo ','; fi; added=1; }
-
-    # ---- VLESS REALITY (fixed) ----
-    add_comma
-    cat <<EOF
-      {
-        "type": "vless",
-        "tag": "in-reality",
-        "listen": "0.0.0.0",
-        "listen_port": $REALITY_PORT_CHOSEN,
-        "sniff": true,
-        "sniff_override_destination": true,
-        "domain_strategy": "ipv4_only",
-        "users": [
-          { "uuid": "$UUID", "flow": "xtls-rprx-vision" }
-        ],
-        "tls": {
-          "enabled": true,
-          "server_name": "$SNI_DEFAULT",
-          "reality": {
-            "enabled": true,
-            "private_key": "$PRIV",
-            "short_id": ["$SID"],
-            "handshake": { "server": "$SNI_DEFAULT", "server_port": 443 }
-          },
-          "alpn": ["h2", "http/1.1"]
-        }
-      }
-EOF
-
-    # ---- Optional WS-TLS / Hy2 if cert is available ----
-    if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" && -f "$CERT_FULLCHAIN" && -f "$CERT_KEY" ]]; then
-      # Enhanced certificate validation
-      [[ -r "$CERT_FULLCHAIN" ]] || die "Certificate file not readable: $CERT_FULLCHAIN"
-      [[ -r "$CERT_KEY" ]] || die "Private key file not readable: $CERT_KEY"
-      
-      # Check certificate validity
-      if ! openssl x509 -checkend 86400 -noout -in "$CERT_FULLCHAIN" >/dev/null 2>&1; then
-        warn "Certificate will expire within 24 hours: $CERT_FULLCHAIN"
-      fi
-      
-      # Verify certificate and key match
-      if ! openssl x509 -noout -modulus -in "$CERT_FULLCHAIN" | openssl md5 >/dev/null 2>&1 || \
-         ! openssl rsa -noout -modulus -in "$CERT_KEY" | openssl md5 >/dev/null 2>&1; then
-        warn "Could not verify certificate and key compatibility"
-      fi
-      add_comma
-      cat <<EOF
-      {
-        "type": "vless",
-        "tag": "in-ws",
-        "listen": "0.0.0.0",
-        "listen_port": $WS_PORT_CHOSEN,
-        "users": [
-          { "uuid": "$UUID" }
-        ],
-        "tls": {
-          "enabled": true,
-          "server_name": "$DOMAIN",
-          "certificate_path": "$CERT_FULLCHAIN",
-          "key_path": "$CERT_KEY",
-          "alpn": ["http/1.1"]
-        },
-        "transport": { "type": "ws", "path": "/ws" }
-      }
-EOF
-
-      add_comma
-      cat <<EOF
-      {
-        "type": "hysteria2",
-        "tag": "in-hy2",
-        "listen": "0.0.0.0",
-        "listen_port": $HY2_PORT_CHOSEN,
-        "users": [
-          { "password": "$HY2_PASS" }
-        ],
-        "up_mbps": 100,
-        "down_mbps": 100,
-        "tls": {
-          "enabled": true,
-          "certificate_path": "$CERT_FULLCHAIN",
-          "key_path": "$CERT_KEY",
-          "alpn": ["h3"]
-        }
-      }
-EOF
+  # Create temporary file for atomic write with secure permissions
+  local temp_conf
+  temp_conf=$(mktemp) || die "Failed to create secure temporary file"
+  chmod 600 "$temp_conf" || die "Failed to set secure permissions on temporary file"
+  
+  # Enhanced certificate validation first if certificates are provided
+  if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" && -f "$CERT_FULLCHAIN" && -f "$CERT_KEY" ]]; then
+    [[ -r "$CERT_FULLCHAIN" ]] || die "Certificate file not readable: $CERT_FULLCHAIN"
+    [[ -r "$CERT_KEY" ]] || die "Private key file not readable: $CERT_KEY"
+    
+    # Check certificate validity
+    if ! openssl x509 -checkend 86400 -noout -in "$CERT_FULLCHAIN" >/dev/null 2>&1; then
+      warn "Certificate will expire within 24 hours: $CERT_FULLCHAIN"
     fi
-
-    echo '  ],'
-    echo '  "outbounds": [ { "type": "direct", "tag": "direct" }, { "type": "block", "tag": "block" } ]'
-    echo '}'
-  } >>"$temp_conf"
+    
+    # Verify certificate and key match
+    local cert_modulus key_modulus
+    if cert_modulus=$(openssl x509 -noout -modulus -in "$CERT_FULLCHAIN" 2>/dev/null | openssl md5 2>/dev/null) && \
+       key_modulus=$(openssl rsa -noout -modulus -in "$CERT_KEY" 2>/dev/null | openssl md5 2>/dev/null); then
+      if [[ "$cert_modulus" != "$key_modulus" ]]; then
+        warn "Certificate and private key do not match"
+      fi
+    else
+      warn "Could not verify certificate and key compatibility"
+    fi
+  fi
+  
+  # Create base configuration using jq for robust JSON generation
+  local base_config reality_config
+  
+  if ! base_config=$(jq -n \
+    --arg log_level "$LOG_LEVEL" \
+    '{
+      log: { level: $log_level },
+      inbounds: [],
+      outbounds: [
+        { type: "direct", tag: "direct" },
+        { type: "block", tag: "block" }
+      ]
+    }' 2>/dev/null); then
+    die "Failed to create base configuration with jq"
+  fi
+  
+  # Add Reality inbound (always present)
+  if ! reality_config=$(jq -n \
+    --arg uuid "$UUID" \
+    --arg port "$REALITY_PORT_CHOSEN" \
+    --arg sni "$SNI_DEFAULT" \
+    --arg priv "$PRIV" \
+    --arg sid "$SID" \
+    '{
+      type: "vless",
+      tag: "in-reality",
+      listen: "0.0.0.0",
+      listen_port: ($port | tonumber),
+      sniff: true,
+      sniff_override_destination: true,
+      domain_strategy: "ipv4_only",
+      users: [{ uuid: $uuid, flow: "xtls-rprx-vision" }],
+      tls: {
+        enabled: true,
+        server_name: $sni,
+        reality: {
+          enabled: true,
+          private_key: $priv,
+          short_id: [$sid],
+          handshake: { server: $sni, server_port: 443 }
+        },
+        alpn: ["h2", "http/1.1"]
+      }
+    }' 2>/dev/null); then
+    die "Failed to create Reality configuration with jq"
+  fi
+  
+  # Add Reality inbound to base config
+  if ! base_config=$(echo "$base_config" | jq --argjson reality "$reality_config" '.inbounds += [$reality]' 2>/dev/null); then
+    die "Failed to add Reality configuration to base config"
+  fi
+  
+  # Add WS-TLS and Hysteria2 inbounds if certificates are available
+  if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" && -f "$CERT_FULLCHAIN" && -f "$CERT_KEY" ]]; then
+    # Add WS-TLS inbound
+    local ws_config hy2_config
+    
+    if ! ws_config=$(jq -n \
+      --arg uuid "$UUID" \
+      --arg port "$WS_PORT_CHOSEN" \
+      --arg domain "$DOMAIN" \
+      --arg cert_path "$CERT_FULLCHAIN" \
+      --arg key_path "$CERT_KEY" \
+      '{
+        type: "vless",
+        tag: "in-ws",
+        listen: "0.0.0.0",
+        listen_port: ($port | tonumber),
+        users: [{ uuid: $uuid }],
+        tls: {
+          enabled: true,
+          server_name: $domain,
+          certificate_path: $cert_path,
+          key_path: $key_path,
+          alpn: ["http/1.1"]
+        },
+        transport: { type: "ws", path: "/ws" }
+      }' 2>/dev/null); then
+      die "Failed to create WS-TLS configuration with jq"
+    fi
+    
+    # Add Hysteria2 inbound
+    if ! hy2_config=$(jq -n \
+      --arg password "$HY2_PASS" \
+      --arg port "$HY2_PORT_CHOSEN" \
+      --arg cert_path "$CERT_FULLCHAIN" \
+      --arg key_path "$CERT_KEY" \
+      '{
+        type: "hysteria2",
+        tag: "in-hy2",
+        listen: "0.0.0.0",
+        listen_port: ($port | tonumber),
+        users: [{ password: $password }],
+        up_mbps: 100,
+        down_mbps: 100,
+        tls: {
+          enabled: true,
+          certificate_path: $cert_path,
+          key_path: $key_path,
+          alpn: ["h3"]
+        }
+      }' 2>/dev/null); then
+      die "Failed to create Hysteria2 configuration with jq"
+    fi
+    
+    # Add both WS and Hysteria2 inbounds
+    if ! base_config=$(echo "$base_config" | jq --argjson ws "$ws_config" --argjson hy2 "$hy2_config" '.inbounds += [$ws, $hy2]' 2>/dev/null); then
+      die "Failed to add WS-TLS and Hysteria2 configurations"
+    fi
+  fi
+  
+  # Write configuration to temporary file
+  echo "$base_config" > "$temp_conf" || { rm -f "$temp_conf"; die "Failed to write configuration to temporary file"; }
   
   # Validate configuration syntax before applying
   if ! /usr/local/bin/sing-box check -c "$temp_conf" >/dev/null 2>&1; then
@@ -701,7 +970,10 @@ EOF
   fi
   
   # Atomic move to final location
-  mv "$temp_conf" "$SB_CONF"
+  if ! mv "$temp_conf" "$SB_CONF"; then
+    rm -f "$temp_conf"
+    die "Failed to move configuration to final location"
+  fi
   
   # Set secure permissions for configuration file
   chmod 600 "$SB_CONF"
@@ -744,15 +1016,37 @@ EOF
     systemctl start sing-box
   fi
   
+  # Allow service to start up properly before verification
+  sleep 3
+  
   # Wait for service to fully start and verify it's working
   local retry=0
-  while [[ $retry -lt 10 ]]; do
+  while [[ $retry -lt 10 ]]; do    
     if systemctl is-active sing-box >/dev/null 2>&1; then
-      # Additional check: verify ports are actually listening
+      # Additional check: verify required ports are actually listening
       sleep 2
-      if ss -tlnp | grep -q ":${REALITY_PORT_CHOSEN:-443} " && \
-         ss -ulnp | grep -q ":${HY2_PORT_CHOSEN:-8443} "; then
-        success "Service started successfully and ports are listening"
+      
+      # Always check Reality port (required)
+      local reality_port="${REALITY_PORT_CHOSEN:-443}"
+      local reality_listening=false
+      if ss -tlnp | grep -q ":${reality_port} "; then
+        reality_listening=true
+      fi
+      
+      # Check additional ports only if certificates are present
+      local additional_ports_ok=true
+      if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" ]]; then
+        local ws_port="${WS_PORT_CHOSEN:-8444}"
+        local hy2_port="${HY2_PORT_CHOSEN:-8443}"
+        
+        if ! ss -tlnp | grep -q ":${ws_port} " || \
+           ! ss -ulnp | grep -q ":${hy2_port} "; then
+          additional_ports_ok=false
+        fi
+      fi
+      
+      if [[ "$reality_listening" == "true" && "$additional_ports_ok" == "true" ]]; then
+        success "Service started successfully and all required ports are listening"
         break
       fi
     fi
@@ -762,6 +1056,7 @@ EOF
   
   if [[ $retry -ge 10 ]]; then
     warn "Service may not have started properly. Check logs with: journalctl -u sing-box -n 20"
+    # Don't fail the installation - the service might still be working
   fi
 }
 
@@ -871,15 +1166,118 @@ case "$1" in
         /usr/local/bin/sing-box check -c /etc/sing-box/config.json && echo -e "${G}✓ Configuration valid${N}" || echo -e "${R}✗ Configuration invalid${N}"
         ;;
         
+    uninstall|remove)
+        # Define paths consistent with main script
+        SB_BIN="/usr/local/bin/sing-box"
+        SB_CONF_DIR="/etc/sing-box"
+        SB_CONF="$SB_CONF_DIR/config.json"
+        SB_SVC="/etc/systemd/system/sing-box.service"
+        CERT_DIR_BASE="/etc/ssl/sbx"
+        
+        # Check if running as root
+        if [[ "$(id -u)" -ne 0 ]]; then
+            echo -e "${R}[ERR]${N} Please run as root (sudo sbx uninstall)"
+            exit 1
+        fi
+        
+        # Show what will be removed
+        echo
+        echo -e "${Y}[!]${N} The following will be completely removed:"
+        [[ -x "$SB_BIN" ]] && echo "  - Binary: $SB_BIN"
+        [[ -f "$SB_CONF" ]] && echo "  - Config: $SB_CONF"
+        [[ -d "$SB_CONF_DIR" ]] && echo "  - Config directory: $SB_CONF_DIR"
+        [[ -f "$SB_SVC" ]] && echo "  - Service: $SB_SVC"
+        [[ -x "/usr/local/bin/sbx-manager" ]] && echo "  - Management commands: sbx-manager, sbx"
+        [[ -d "$CERT_DIR_BASE" ]] && echo "  - Certificates: $CERT_DIR_BASE"
+        echo "  - Firewall rules for common ports"
+        
+        echo
+        read -rp "Continue with complete removal? [y/N] " confirm
+        if [[ ! "${confirm:-N}" =~ ^[Yy]$ ]]; then
+            echo "Uninstall cancelled."
+            exit 0
+        fi
+        
+        echo
+        echo -e "${G}[*]${N} Stopping and disabling sing-box service..."
+        systemctl disable --now sing-box 2>/dev/null || true
+        
+        # Verify service is actually stopped
+        retry=0
+        while systemctl is-active sing-box >/dev/null 2>&1 && [[ $retry -lt 10 ]]; do
+            sleep 1
+            ((retry++))
+        done
+        
+        if [[ $retry -ge 10 ]]; then
+            echo -e "${Y}[!]${N} Service may still be running. You may need to stop it manually."
+        fi
+        
+        echo -e "${G}[*]${N} Removing service file..."
+        rm -f "$SB_SVC"
+        systemctl daemon-reload || true
+        
+        echo -e "${G}[*]${N} Removing binary..."
+        rm -f "$SB_BIN"
+        
+        echo -e "${G}[*]${N} Removing configuration directory..."
+        rm -rf "$SB_CONF_DIR"
+        
+        echo -e "${G}[*]${N} Removing certificate directory..."
+        rm -rf "$CERT_DIR_BASE"
+        
+        echo -e "${G}[*]${N} Cleaning firewall rules..."
+        if command -v ufw >/dev/null 2>&1; then
+            for port in 443 8443 8444 24443 24444 24445; do
+                ufw delete allow "${port}/tcp" 2>/dev/null || true
+                ufw delete allow "${port}/udp" 2>/dev/null || true
+            done
+        fi
+        
+        echo -e "${G}[*]${N} Cleaning acme.sh installation..."
+        if [[ -d "$HOME/.acme.sh" ]]; then
+            "$HOME/.acme.sh/acme.sh" --uninstall 2>/dev/null || true
+            rm -rf "$HOME/.acme.sh" 2>/dev/null || true
+        fi
+        
+        echo -e "${G}[*]${N} Cleaning temporary files..."
+        find /tmp -maxdepth 1 -name 'sb*' -type f -mmin +10 -delete 2>/dev/null || true
+        find /tmp -maxdepth 1 -name 'sing-box*' -type f -mmin +10 -delete 2>/dev/null || true
+        
+        echo -e "${G}[*]${N} Removing management scripts..."
+        rm -f /usr/local/bin/sbx-manager
+        rm -f /usr/local/bin/sbx
+        
+        # Verify removal
+        remaining_items=()
+        [[ -x "$SB_BIN" ]] && remaining_items+=("$SB_BIN")
+        [[ -f "$SB_CONF" ]] && remaining_items+=("$SB_CONF")
+        [[ -f "$SB_SVC" ]] && remaining_items+=("$SB_SVC")
+        
+        if [[ ${#remaining_items[@]} -eq 0 ]]; then
+            echo
+            echo -e "${G}[✓]${N} Uninstall completed successfully!"
+            echo
+            echo -e "${BLUE}[INFO]${N} All sing-box files and configurations have been removed."
+            echo -e "${BLUE}[INFO]${N} You can safely run the installation script again for a fresh setup."
+        else
+            echo
+            echo -e "${Y}[!]${N} Some items could not be removed:"
+            printf '  %s\n' "${remaining_items[@]}"
+            echo -e "${Y}[!]${N} You may need to remove them manually."
+        fi
+        ;;
+        
     *)
-        echo "Usage: $0 {status|info|restart|start|stop|log|check}"
-        echo "  status   - Check service status"
-        echo "  info     - Show client configuration"  
-        echo "  restart  - Restart service"
-        echo "  start    - Start service"
-        echo "  stop     - Stop service"
-        echo "  log      - View live logs"
-        echo "  check    - Validate configuration"
+        echo "Usage: $0 {status|info|restart|start|stop|log|check|uninstall}"
+        echo "  status    - Check service status"
+        echo "  info      - Show client configuration"  
+        echo "  restart   - Restart service"
+        echo "  start     - Start service"
+        echo "  stop      - Stop service"
+        echo "  log       - View live logs"
+        echo "  check     - Validate configuration"
+        echo "  uninstall - Completely remove sing-box (requires root)"
         ;;
 esac
 EOF
@@ -895,28 +1293,56 @@ validate_service() {
   local service_name="$1"
   msg "Checking $service_name service status..."
   
-  # Wait a moment for service to start
-  sleep 2
-  
+  # Quick check first - many services start immediately
   if systemctl is-active --quiet "$service_name"; then
     success "$service_name service is running"
     return 0
-  else
-    err "$service_name service failed to start"
-    warn "Service status:"
-    systemctl status "$service_name" --no-pager -l || true
-    warn "Recent logs:"
-    journalctl -u "$service_name" --no-pager -n 10 || true
-    return 1
   fi
+  
+  # Wait for service to start with retry logic
+  local max_retries=15
+  local wait_time=2
+  local total_wait_time=$((max_retries * wait_time))
+  
+  msg "Service starting, waiting up to ${total_wait_time}s..."
+  local retry=0
+  
+  while [[ $retry -lt $max_retries ]]; do
+    sleep $wait_time
+    retry=$((retry + 1))
+    
+    if systemctl is-active --quiet "$service_name"; then
+      success "$service_name service is running (started in $((retry * wait_time))s)"
+      return 0
+    fi
+    
+    # Progress feedback every 5 attempts (10 seconds)
+    if [[ $((retry % 5)) -eq 0 ]]; then
+      msg "Still waiting for service startup... ($((retry * wait_time))/${total_wait_time}s)"
+    fi
+  done
+  
+  # If we get here, service failed to start
+  err "$service_name service failed to start after ${max_retries} attempts (${total_wait_time}s total)"
+  warn "Final service state: $(systemctl is-active "$service_name" 2>/dev/null || echo "unknown")"
+  warn "Service status:"
+  systemctl status "$service_name" --no-pager -l || true
+  warn "Recent logs:"
+  journalctl -u "$service_name" --no-pager -n 15 --since "30 seconds ago" || true
+  return 1
 }
 
 open_firewall() {
   if have ufw; then
-    ufw allow "${REALITY_PORT_CHOSEN}/tcp" || true
+    # Use chosen ports if available, otherwise fall back to defaults
+    local reality_port="${REALITY_PORT_CHOSEN:-$REALITY_PORT}"
+    local ws_port="${WS_PORT_CHOSEN:-$WS_PORT}" 
+    local hy2_port="${HY2_PORT_CHOSEN:-$HY2_PORT}"
+    
+    [[ -n "$reality_port" ]] && ufw allow "${reality_port}/tcp" || true
     if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" ]]; then
-      ufw allow "${WS_PORT_CHOSEN}/tcp" || true
-      ufw allow "${HY2_PORT_CHOSEN}/udp" || true
+      [[ -n "$ws_port" ]] && ufw allow "${ws_port}/tcp" || true
+      [[ -n "$hy2_port" ]] && ufw allow "${hy2_port}/udp" || true
     fi
   fi
 }
@@ -924,28 +1350,52 @@ open_firewall() {
 print_summary() {
   echo
   printf "${B}=== sing-box Installed (official) ===${N}\n"
-  echo "Domain    : ${DOMAIN}"
+  if [[ "${REALITY_ONLY_MODE:-0}" == "1" ]]; then
+    echo "Server    : ${DOMAIN:-N/A} (IP address - Reality-only mode)"
+  else
+    echo "Domain    : ${DOMAIN:-N/A}"
+  fi
   echo "Binary    : $SB_BIN"
   echo "Config    : $SB_CONF"
   echo "Service   : systemctl status sing-box"
   echo
-  echo "INBOUND   : VLESS-REALITY  ${REALITY_PORT_CHOSEN}/tcp"
-  echo "  PublicKey = ${PUB}"
-  echo "  Short ID  = ${SID}"
-  echo "  UUID      = ${UUID}"
-  local uri_real="vless://${UUID}@${DOMAIN}:${REALITY_PORT_CHOSEN}?encryption=none&security=reality&flow=xtls-rprx-vision&sni=${SNI_DEFAULT}&pbk=${PUB}&sid=${SID}&type=tcp&fp=chrome#Reality-${DOMAIN}"
-  echo "  URI       = ${uri_real}"
+  
+  # Use chosen ports if available, otherwise fall back to defaults
+  local reality_port="${REALITY_PORT_CHOSEN:-$REALITY_PORT}"
+  local ws_port="${WS_PORT_CHOSEN:-$WS_PORT}"
+  local hy2_port="${HY2_PORT_CHOSEN:-$HY2_PORT}"
+  
+  echo "INBOUND   : VLESS-REALITY  ${reality_port}/tcp"
+  echo "  PublicKey = ${PUB:-N/A}"
+  echo "  Short ID  = ${SID:-N/A}"
+  echo "  UUID      = ${UUID:-N/A}"
+  
+  if [[ -n "${UUID:-}" && -n "${DOMAIN:-}" && -n "${PUB:-}" && -n "${SID:-}" ]]; then
+    local uri_real="vless://${UUID}@${DOMAIN}:${reality_port}?encryption=none&security=reality&flow=xtls-rprx-vision&sni=${SNI_DEFAULT}&pbk=${PUB}&sid=${SID}&type=tcp&fp=chrome#Reality-${DOMAIN}"
+    echo "  URI       = ${uri_real}"
+  else
+    echo "  URI       = [Configuration incomplete - check /etc/sing-box/client-info.txt]"
+  fi
+  
   if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" ]]; then
     echo
-    echo "INBOUND   : VLESS-WS-TLS   ${WS_PORT_CHOSEN}/tcp"
+    echo "INBOUND   : VLESS-WS-TLS   ${ws_port}/tcp"
     echo "  CERT     = ${CERT_FULLCHAIN}"
-    local uri_ws="vless://${UUID}@${DOMAIN}:${WS_PORT_CHOSEN}?encryption=none&security=tls&type=ws&host=${DOMAIN}&path=/ws&sni=${DOMAIN}&fp=chrome#WS-TLS-${DOMAIN}"
-    echo "  URI      = ${uri_ws}"
+    if [[ -n "${UUID:-}" && -n "${DOMAIN:-}" ]]; then
+      local uri_ws="vless://${UUID}@${DOMAIN}:${ws_port}?encryption=none&security=tls&type=ws&host=${DOMAIN}&path=/ws&sni=${DOMAIN}&fp=chrome#WS-TLS-${DOMAIN}"
+      echo "  URI      = ${uri_ws}"
+    else
+      echo "  URI      = [Configuration incomplete]"
+    fi
     echo
-    echo "INBOUND   : Hysteria2      ${HY2_PORT_CHOSEN}/udp"
+    echo "INBOUND   : Hysteria2      ${hy2_port}/udp"
     echo "  CERT     = ${CERT_FULLCHAIN}"
-    local uri_hy2="hysteria2://${HY2_PASS}@${DOMAIN}:${HY2_PORT_CHOSEN}/?sni=${DOMAIN}&alpn=h3&insecure=0#Hysteria2-${DOMAIN}"
-    echo "  URI      = ${uri_hy2}"
+    if [[ -n "${HY2_PASS:-}" && -n "${DOMAIN:-}" ]]; then
+      local uri_hy2="hysteria2://${HY2_PASS}@${DOMAIN}:${hy2_port}/?sni=${DOMAIN}&alpn=h3&insecure=0#Hysteria2-${DOMAIN}"
+      echo "  URI      = ${uri_hy2}"
+    else
+      echo "  URI      = [Configuration incomplete]"
+    fi
   fi
   echo
   echo -e "${Y}Notes${N}: Reality/Hy2 建议灰云；WS-TLS 可灰/橙云。DNS-01 推荐；HTTP-01 需 :80 可达且未被占用。"
@@ -956,22 +1406,23 @@ print_summary() {
   echo -e "  ${G}sbx restart${N}       - Restart service"  
   echo -e "  ${G}sbx log${N}           - View live logs"
   echo -e "  ${G}sbx check${N}         - Validate configuration"
+  echo -e "  ${G}sudo sbx uninstall${N} - Completely remove sing-box"
   echo ""
   echo -e "  Full command: ${G}sbx-manager${N}, short alias: ${G}sbx${N}"
   
-  # Save client info for later retrieval
+  # Save client info for later retrieval with safe variable handling
   cat > /etc/sing-box/client-info.txt <<EOF
-DOMAIN=${DOMAIN}
-REALITY_PORT=${REALITY_PORT_CHOSEN}
-WS_PORT=${WS_PORT_CHOSEN}
-HY2_PORT=${HY2_PORT_CHOSEN}
-UUID=${UUID}
-PUBLIC_KEY=${PUB}
-SHORT_ID=${SID}
-HY2_PASS=${HY2_PASS}
-CERT_FULLCHAIN=${CERT_FULLCHAIN}
-CERT_KEY=${CERT_KEY}
-SNI=${SNI_DEFAULT}
+DOMAIN=${DOMAIN:-}
+REALITY_PORT=${REALITY_PORT_CHOSEN:-$REALITY_PORT}
+WS_PORT=${WS_PORT_CHOSEN:-$WS_PORT}
+HY2_PORT=${HY2_PORT_CHOSEN:-$HY2_PORT}
+UUID=${UUID:-}
+PUBLIC_KEY=${PUB:-}
+SHORT_ID=${SID:-}
+HY2_PASS=${HY2_PASS:-}
+CERT_FULLCHAIN=${CERT_FULLCHAIN:-}
+CERT_KEY=${CERT_KEY:-}
+SNI=${SNI_DEFAULT:-www.cloudflare.com}
 EOF
   chmod 600 /etc/sing-box/client-info.txt
 }
@@ -995,6 +1446,7 @@ print_upgrade_summary() {
   echo -e "  ${G}sbx restart${N}       - Restart service"  
   echo -e "  ${G}sbx log${N}           - View live logs"
   echo -e "  ${G}sbx check${N}         - Validate configuration"
+  echo -e "  ${G}sudo sbx uninstall${N} - Completely remove sing-box"
   echo ""
   echo -e "  Full command: ${G}sbx-manager${N}, short alias: ${G}sbx${N}"
   echo
@@ -1005,18 +1457,29 @@ install_flow() {
   show_logo
   need_root
   
+  # Validate environment variables first (if provided)
+  if [[ -n "$DOMAIN" ]]; then
+    validate_env_vars
+  fi
+  
   # Enhanced installation detection and management
   check_existing_installation
   
-  [[ -n "$DOMAIN" ]] || die "Please set DOMAIN=your.graycloud.domain"
+  # DOMAIN is no longer required - will be handled in gen_materials
   ensure_tools
   download_singbox
   
   # Skip configuration steps if only upgrading binary
   if [[ "${SKIP_CONFIG_GEN:-0}" != "1" ]]; then
-    gen_materials
-    if [[ -n "${CERT_MODE:-}" || ( -n "${CERT_FULLCHAIN:-}" && -n "${CERT_KEY:-}" ) ]]; then
-      maybe_issue_cert
+    gen_materials  # This will handle DOMAIN/IP detection
+    
+    # Only attempt certificate operations if we have a real domain (not IP)
+    if [[ "${REALITY_ONLY_MODE:-0}" != "1" ]]; then
+      if [[ -n "${CERT_MODE:-}" || ( -n "${CERT_FULLCHAIN:-}" && -n "${CERT_KEY:-}" ) ]]; then
+        maybe_issue_cert
+      fi
+    else
+      info "Reality-only mode: Skipping certificate operations"
     fi
     write_config
     setup_service
@@ -1069,6 +1532,17 @@ uninstall_flow() {
   msg "Stopping and disabling sing-box service..."
   systemctl disable --now sing-box 2>/dev/null || true
   
+  # Verify service is actually stopped
+  local retry=0
+  while systemctl is-active sing-box >/dev/null 2>&1 && [[ $retry -lt 10 ]]; do
+    sleep 1
+    ((retry++))
+  done
+  
+  if [[ $retry -ge 10 ]]; then
+    warn "Service may still be running. You may need to stop it manually."
+  fi
+  
   msg "Removing service file..."
   rm -f "$SB_SVC"
   systemctl daemon-reload || true
@@ -1086,6 +1560,12 @@ uninstall_flow() {
   msg "Removing certificate directory..."
   rm -rf "/etc/ssl/sbx"
   
+  msg "Cleaning acme.sh installation..."
+  if [[ -d "$HOME/.acme.sh" ]]; then
+    "$HOME/.acme.sh/acme.sh" --uninstall 2>/dev/null || true
+    rm -rf "$HOME/.acme.sh" 2>/dev/null || true
+  fi
+  
   msg "Cleaning firewall rules..."
   if have ufw; then
     for port in 443 8443 8444 24443 24444 24445; do
@@ -1096,8 +1576,8 @@ uninstall_flow() {
   
   # Clean up any temporary files that might have been created
   msg "Cleaning temporary files..."
-  rm -rf /tmp/sb* 2>/dev/null || true
-  rm -rf /tmp/sing-box* 2>/dev/null || true
+  find /tmp -maxdepth 1 -name 'sb*' -type f -mmin +10 -delete 2>/dev/null || true
+  find /tmp -maxdepth 1 -name 'sing-box*' -type f -mmin +10 -delete 2>/dev/null || true
   
   # Verify removal
   local remaining_items=()

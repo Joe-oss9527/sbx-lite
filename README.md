@@ -10,8 +10,18 @@
 
 ## 🚀 快速开始
 
-**最简安装（推荐）- 仅 Reality**
+**最简安装（推荐）- 仅 Reality，自动检测 IP**
 ```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh)
+```
+> 🎯 **无需域名！** 脚本会自动检测服务器公网 IP，适合快速部署 Reality 协议
+
+**Reality + 指定 IP 或域名**
+```bash
+# 使用 IP 地址
+DOMAIN=1.2.3.4 bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh)
+
+# 使用域名
 DOMAIN=your.domain.com bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh)
 ```
 
@@ -22,6 +32,7 @@ CERT_MODE=cf_dns \
 CF_Token='your_cloudflare_token' \
 bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh)
 ```
+> ⚠️ **注意**：WS-TLS 和 Hysteria2 需要真实域名和证书，不支持 IP 地址
 
 ---
 
@@ -46,6 +57,12 @@ bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/inst
 
 ## 🗑️ 卸载
 
+**便捷卸载（推荐）**
+```bash
+sudo sbx uninstall
+```
+
+**传统卸载方式**
 ```bash
 FORCE=1 bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh) uninstall
 ```
@@ -75,6 +92,9 @@ sbx check
 # 启动/停止服务
 sbx start
 sbx stop
+
+# 完全卸载（需要 root 权限）
+sudo sbx uninstall
 ```
 
 **传统 systemctl 命令仍然可用**：
@@ -92,7 +112,8 @@ journalctl -u sing-box -f
 ## ❓ 故障排查
 
 **Reality 连不通**
-- 确认域名是灰云（DNS only）
+- 如果使用域名：确认域名是灰云（DNS only）
+- 如果使用 IP：确认防火墙允许 443 端口
 - 检查 443 端口是否被占用
 - 确认系统时间正确
 - **v2rayN 用户**：需要在设置中将 VLESS 内核切换为 sing-box（默认是 Xray）
