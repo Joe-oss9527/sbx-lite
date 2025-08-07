@@ -92,7 +92,7 @@ HY2_PORT_FALLBACK=24445
 SNI_DEFAULT="${SNI_DEFAULT:-www.cloudflare.com}"
 CERT_DIR_BASE="${CERT_DIR_BASE:-/etc/ssl/sbx}"
 SINGBOX_VERSION="${SINGBOX_VERSION:-}"
-LOG_LEVEL="${LOG_LEVEL:-info}"
+LOG_LEVEL="${LOG_LEVEL:-warn}"
 
 # Color definitions - safe fallback approach
 if command -v tput >/dev/null 2>&1 && tput colors >/dev/null 2>&1; then
@@ -117,6 +117,13 @@ success(){ echo "${G}[✓]${N} $*"; }
 die(){ err "$*"; exit 1; }
 need_root(){ [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "Please run as root (sudo)."; }
 have(){ command -v "$1" >/dev/null 2>&1; }
+
+# Safe temporary directory cleanup
+safe_rm_temp() {
+  local temp_path="$1"
+  [[ -n "$temp_path" && "$temp_path" != "/" && "$temp_path" =~ ^/tmp/ ]] || return 1
+  [[ -d "$temp_path" ]] && rm -rf "$temp_path" 2>/dev/null || true
+}
 
 # Auto-detect server public IP for Reality-only mode
 get_public_ip() {
@@ -333,6 +340,12 @@ compare_versions() {
     return
   fi
   
+  # Check for very old versions that might be incompatible
+  if [[ "$current" =~ ^0\.|^1\.[0-9]\..*|^1\.1[01]\..*$ ]]; then
+    echo "unsupported"
+    return
+  fi
+  
   # Simple version comparison (works for semantic versioning)
   if [[ "$current" = "$latest" ]]; then
     echo "current"
@@ -384,6 +397,10 @@ check_existing_installation() {
           ;;
         "outdated")
           warn "Update available: $current_version → $latest_version"
+          ;;
+        "unsupported")
+          err "Your version ($current_version) is too old and may not be compatible with this script"
+          warn "Strongly recommend upgrading to the latest version ($latest_version)"
           ;;
         "newer")
           info "You have a newer version than latest release ($current_version > $latest_version)"
@@ -540,7 +557,7 @@ download_singbox() {
   local arch tmp api url tag raw
   arch="$(detect_arch)"
   tmp="$(mktemp -d)" || die "Failed to create secure temporary directory"
-  chmod 700 "$tmp" || { rm -rf "$tmp"; die "Failed to set secure permissions on temporary directory"; }
+  chmod 700 "$tmp" || { safe_rm_temp "$tmp"; die "Failed to set secure permissions on temporary directory"; }
 
   if [[ -n "$SINGBOX_VERSION" ]]; then
     tag="$SINGBOX_VERSION"
@@ -550,8 +567,8 @@ download_singbox() {
   fi
 
   msg "Fetching sing-box release info for $arch ..."
-  raw=$(safe_http_get "$api" 30 3) || { rm -rf "$tmp"; die "Failed to query GitHub API after multiple attempts"; }
-  [[ -n "${raw:-}" ]] || { rm -rf "$tmp"; die "Empty response from GitHub API"; }
+  raw=$(safe_http_get "$api" 30 3) || { safe_rm_temp "$tmp"; die "Failed to query GitHub API after multiple attempts"; }
+  [[ -n "${raw:-}" ]] || { safe_rm_temp "$tmp"; die "Empty response from GitHub API"; }
 
   if [[ -z "$SINGBOX_VERSION" ]]; then
     tag="$(printf '%s' "$raw" | jq -r .tag_name)"
@@ -585,7 +602,7 @@ download_singbox() {
         download_success=true
       fi
     else
-      { rm -rf "$tmp"; die "Neither curl nor wget available for download"; }
+      { safe_rm_temp "$tmp"; die "Neither curl nor wget available for download"; }
     fi
     
     if [[ "$download_success" == "false" ]]; then
@@ -598,7 +615,7 @@ download_singbox() {
     fi
   done
   
-  [[ "$download_success" == "true" ]] || { rm -rf "$tmp"; die "Failed to download package after $max_download_retries attempts"; }
+  [[ "$download_success" == "true" ]] || { safe_rm_temp "$tmp"; die "Failed to download package after $max_download_retries attempts"; }
   
   if [[ -n "$expected_sha256" ]]; then
     msg "Verifying download integrity..."
@@ -611,10 +628,10 @@ download_singbox() {
 
   local bin
   bin="$(find "$tmp" -type f -name 'sing-box' | head -1)"
-  [[ -n "$bin" ]] || { rm -rf "$tmp"; die "sing-box binary not found in package"; }
+  [[ -n "$bin" ]] || { safe_rm_temp "$tmp"; die "sing-box binary not found in package"; }
   install -m 0755 "$bin" "$SB_BIN"
   
-  rm -rf "$tmp"
+  safe_rm_temp "$tmp"
   success "Installed sing-box -> $SB_BIN"
 }
 
@@ -855,7 +872,7 @@ write_config() {
   if ! base_config=$(jq -n \
     --arg log_level "$LOG_LEVEL" \
     '{
-      log: { level: $log_level },
+      log: { level: $log_level, timestamp: true },
       inbounds: [],
       outbounds: [
         { type: "direct", tag: "direct" },
@@ -875,11 +892,8 @@ write_config() {
     '{
       type: "vless",
       tag: "in-reality",
-      listen: "0.0.0.0",
+      listen: "::",
       listen_port: ($port | tonumber),
-      sniff: true,
-      sniff_override_destination: true,
-      domain_strategy: "ipv4_only",
       users: [{ uuid: $uuid, flow: "xtls-rprx-vision" }],
       tls: {
         enabled: true,
@@ -888,7 +902,8 @@ write_config() {
           enabled: true,
           private_key: $priv,
           short_id: [$sid],
-          handshake: { server: $sni, server_port: 443 }
+          handshake: { server: $sni, server_port: 443 },
+          max_time_difference: "1m"
         },
         alpn: ["h2", "http/1.1"]
       }
@@ -915,7 +930,7 @@ write_config() {
       '{
         type: "vless",
         tag: "in-ws",
-        listen: "0.0.0.0",
+        listen: "::",
         listen_port: ($port | tonumber),
         users: [{ uuid: $uuid }],
         tls: {
@@ -939,7 +954,7 @@ write_config() {
       '{
         type: "hysteria2",
         tag: "in-hy2",
-        listen: "0.0.0.0",
+        listen: "::",
         listen_port: ($port | tonumber),
         users: [{ password: $password }],
         up_mbps: 100,
@@ -958,6 +973,28 @@ write_config() {
     if ! base_config=$(echo "$base_config" | jq --argjson ws "$ws_config" --argjson hy2 "$hy2_config" '.inbounds += [$ws, $hy2]' 2>/dev/null); then
       die "Failed to add WS-TLS and Hysteria2 configurations"
     fi
+  fi
+  
+  # Add route configuration for sing-box 1.12.0 compatibility
+  local route_inbounds='["in-reality"]'
+  if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" && -f "$CERT_FULLCHAIN" && -f "$CERT_KEY" ]]; then
+    route_inbounds='["in-reality", "in-ws", "in-hy2"]'
+  fi
+  
+  if ! base_config=$(echo "$base_config" | jq --argjson inbounds "$route_inbounds" '.route = {
+    "rules": [
+      {
+        "inbound": $inbounds,
+        "action": "sniff"
+      },
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      }
+    ],
+    "auto_detect_interface": true
+  }' 2>/dev/null); then
+    die "Failed to add route configuration"
   fi
   
   # Write configuration to temporary file

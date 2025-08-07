@@ -141,6 +141,14 @@ sudo sbx uninstall
 - **Enhanced Certificate Validation**: Expiry checks, key compatibility with proper modulus comparison
 - **Secure IP Detection**: Multi-service redundancy with `timeout` protection and enhanced validation
 
+### sing-box 1.12.0 Compliance Rules
+- **NEVER use deprecated inbound fields**: `sniff`, `sniff_override_destination`, `domain_strategy`
+- **ALWAYS include route configuration**: Required for sniffing and DNS handling
+- **Dynamic route rules**: Adapt inbound list based on enabled protocols (Reality-only vs full mode)
+- **IPv6 dual-stack**: Use `listen: "::"` instead of `listen: "0.0.0.0"`
+- **Security parameters**: Include `max_time_difference: "1m"` in REALITY configuration
+- **Optimized logging**: Default to `warn` level with timestamps enabled
+
 ### Service Management Best Practices  
 - Fresh install: Stop service → Wait 10s for shutdown → Check ports → Continue
 - Use `systemctl is-active sing-box >/dev/null 2>&1` for status checks
@@ -192,6 +200,47 @@ sudo sbx uninstall
 - v2rayN users must switch from Xray core to sing-box core in client settings
 - Generated URIs include aliases: `#Reality-domain`, `#WS-TLS-domain`, `#Hysteria2-domain`
 - Short IDs are 8 characters (sing-box limit), not 16 characters (Xray limit)
+
+## sing-box 1.12.0 Configuration Updates (2025-08)
+
+### Configuration Modernization
+- **Deprecated Field Removal**: Removed `sniff`, `sniff_override_destination`, `domain_strategy` from inbound configuration (deprecated in 1.12.0)
+- **Route Rules Migration**: Migrated sniffing functionality from inbound to route rules using `action: "sniff"`
+- **DNS Hijacking**: Added `action: "hijack-dns"` route rule for DNS traffic handling
+- **Auto Interface Detection**: Enabled `auto_detect_interface: true` to prevent routing loops
+
+### Performance & Security Enhancements
+- **Log Level Optimization**: Changed default from `info` to `warn` to reduce log volume
+- **IPv6 Support**: Updated listen address from `0.0.0.0` to `::` for dual-stack support
+- **Timestamp Logging**: Added `timestamp: true` for better log correlation
+- **Anti-Replay Protection**: Added `max_time_difference: "1m"` to REALITY configuration
+
+### Configuration Structure (1.12.0)
+```json
+{
+  "log": { "level": "warn", "timestamp": true },
+  "inbounds": [
+    {
+      "type": "vless",
+      "tag": "in-reality",
+      "listen": "::",  // IPv4/IPv6 dual-stack
+      "users": [{ "uuid": "UUID", "flow": "xtls-rprx-vision" }],
+      "tls": {
+        "reality": {
+          "max_time_difference": "1m"  // Anti-replay protection
+        }
+      }
+    }
+  ],
+  "route": {
+    "rules": [
+      { "inbound": ["in-reality"], "action": "sniff" },
+      { "protocol": "dns", "action": "hijack-dns" }
+    ],
+    "auto_detect_interface": true
+  }
+}
+```
 
 ## Recent Critical Fixes & Improvements (2025-08)
 
