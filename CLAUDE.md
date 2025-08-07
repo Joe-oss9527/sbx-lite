@@ -56,7 +56,7 @@ sudo sbx uninstall
 - **Zero Configuration**: No domain or certificate required
 - **Auto IP Detection**: Automatically detects server public IP via multiple services
 - **Direct IP Usage**: Client connects directly to IP address, no DNS resolution needed
-- **SNI Masquerading**: Uses `www.cloudflare.com` as SNI for traffic camouflage
+- **SNI Masquerading**: Uses `www.microsoft.com` as SNI for traffic camouflage
 - **No Certificate Dependency**: Bypasses traditional TLS certificate requirements
 
 ### Installation Modes

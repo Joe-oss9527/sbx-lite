@@ -89,7 +89,7 @@ REALITY_PORT_FALLBACK=24443
 WS_PORT_FALLBACK=24444
 HY2_PORT_FALLBACK=24445
 
-SNI_DEFAULT="${SNI_DEFAULT:-www.cloudflare.com}"
+SNI_DEFAULT="${SNI_DEFAULT:-www.microsoft.com}"
 CERT_DIR_BASE="${CERT_DIR_BASE:-/etc/ssl/sbx}"
 SINGBOX_VERSION="${SINGBOX_VERSION:-}"
 LOG_LEVEL="${LOG_LEVEL:-warn}"
@@ -829,8 +829,11 @@ gen_materials() {
   for port_info in "Reality:$REALITY_PORT_CHOSEN" "WebSocket:$WS_PORT_CHOSEN" "Hysteria2:$HY2_PORT_CHOSEN"; do
     port_name="${port_info%%:*}"
     port_num="${port_info##*:}"
-    if port_in_use "$port_num"; then
-      die "$port_name port $port_num is still in use after allocation. Please check for conflicts."
+    # Skip validation if port_num is empty or invalid
+    if [[ -n "$port_num" && "$port_num" =~ ^[0-9]+$ ]]; then
+      if port_in_use "$port_num"; then
+        die "$port_name port $port_num is still in use after allocation. Please check for conflicts."
+      fi
     fi
   done
 }
@@ -838,6 +841,14 @@ gen_materials() {
 write_config() {
   msg "Writing $SB_CONF ..."
   mkdir -p "$SB_CONF_DIR"
+  
+  # Validate required variables before config generation
+  [[ -n "$UUID" ]] || die "UUID is not set. Configuration generation failed."
+  [[ -n "$REALITY_PORT_CHOSEN" ]] || die "Reality port is not set. Configuration generation failed."
+  [[ -n "$SNI_DEFAULT" ]] || die "SNI is not set. Configuration generation failed."
+  [[ -n "$PRIV" ]] || die "Reality private key is not set. Configuration generation failed."
+  [[ -n "$SID" ]] || die "Reality short ID is not set. Configuration generation failed."
+  [[ -n "$LOG_LEVEL" ]] || die "Log level is not set. Configuration generation failed."
   
   # Create temporary file for atomic write with secure permissions
   local temp_conf
@@ -918,6 +929,12 @@ write_config() {
   
   # Add WS-TLS and Hysteria2 inbounds if certificates are available
   if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" && -f "$CERT_FULLCHAIN" && -f "$CERT_KEY" ]]; then
+    # Validate additional variables for certificate-based configurations
+    [[ -n "$WS_PORT_CHOSEN" ]] || die "WebSocket port is not set for certificate configuration."
+    [[ -n "$HY2_PORT_CHOSEN" ]] || die "Hysteria2 port is not set for certificate configuration."
+    [[ -n "$DOMAIN" ]] || die "Domain is not set for certificate configuration."
+    [[ -n "$HY2_PASSWORD" ]] || die "Hysteria2 password is not set for certificate configuration."
+    
     # Add WS-TLS inbound
     local ws_config hy2_config
     
@@ -1459,7 +1476,7 @@ SHORT_ID=${SID:-}
 HY2_PASS=${HY2_PASS:-}
 CERT_FULLCHAIN=${CERT_FULLCHAIN:-}
 CERT_KEY=${CERT_KEY:-}
-SNI=${SNI_DEFAULT:-www.cloudflare.com}
+SNI=${SNI_DEFAULT:-www.microsoft.com}
 EOF
   chmod 600 /etc/sing-box/client-info.txt
 }
