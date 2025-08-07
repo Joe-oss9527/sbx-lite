@@ -1194,14 +1194,14 @@ write_config() {
       listen: "::",
       listen_port: ($port | tonumber),
       users: [{ uuid: $uuid, flow: "xtls-rprx-vision" }],
-      network: "tcp,udp",
-      packet_encoding: "xudp",
       multiplex: {
-        enabled: true,
-        protocol: "smux",
-        max_connections: 4,
-        min_streams: 4,
-        padding: false
+        enabled: false,
+        padding: false,
+        brutal: {
+          enabled: false,
+          up_mbps: 1000,
+          down_mbps: 1000
+        }
       },
       tls: {
         enabled: true,
@@ -1251,11 +1251,13 @@ write_config() {
         listen_port: ($port | tonumber),
         users: [{ uuid: $uuid }],
         multiplex: {
-          enabled: true,
-          protocol: "smux",
-          max_connections: 4,
-          min_streams: 4,
-          padding: false
+          enabled: false,
+          padding: false,
+          brutal: {
+            enabled: false,
+            up_mbps: 1000,
+            down_mbps: 1000
+          }
         },
         tls: {
           enabled: true,
@@ -1314,15 +1316,9 @@ write_config() {
       {
         "protocol": "dns",
         "action": "hijack-dns"
-      },
-      {
-        "protocol": "quic",
-        "action": "direct"
       }
     ],
-    "auto_detect_interface": true,
-    "override_android_vpn": true,
-    "final": "direct"
+    "auto_detect_interface": true
   }' 2>/dev/null); then
     die "Failed to add route configuration"
   fi
