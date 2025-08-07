@@ -258,7 +258,7 @@ allocate_port() {
       return 0
     fi
     if [[ $retry_count -eq 0 ]]; then
-      msg "$name port $port in use, retrying in 2 seconds..."
+      msg "$name port $port in use, retrying in 2 seconds..." >&2
     fi
     sleep 2
     ((retry_count++))
@@ -266,7 +266,7 @@ allocate_port() {
   
   # Try fallback port
   if ! port_in_use "$fallback"; then
-    warn "$name port $port persistently in use; switching to $fallback"
+    warn "$name port $port persistently in use; switching to $fallback" >&2
     echo "$fallback"
   else
     die "Both $name ports $port and $fallback are in use. Please free up these ports or specify different ones."
@@ -527,6 +527,12 @@ check_existing_installation() {
           ;;
         3)
           msg "Keeping binary, will regenerate configuration..."
+          # Stop the service before regenerating config to free up ports
+          if systemctl is-active sing-box >/dev/null 2>&1; then
+            msg "Stopping sing-box service to free up ports..."
+            systemctl stop sing-box || warn "Failed to stop service, ports may be in use"
+            sleep 2  # Give service time to fully stop
+          fi
           export SKIP_BINARY_DOWNLOAD=1
           break
           ;;
