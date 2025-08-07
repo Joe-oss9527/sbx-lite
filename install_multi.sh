@@ -246,6 +246,121 @@ generate_hex_string() {
   openssl rand -hex "$length"
 }
 
+# Load and optionally reuse previous configuration
+load_previous_config() {
+  local config_file="/etc/sing-box/client-info.txt"
+  
+  if [[ ! -f "$config_file" ]]; then
+    msg "No previous configuration found, will create new configuration"
+    return 0
+  fi
+  
+  # Validate config file is readable and not empty
+  if [[ ! -r "$config_file" ]]; then
+    warn "Previous configuration file exists but is not readable"
+    return 1
+  fi
+  
+  if [[ ! -s "$config_file" ]]; then
+    warn "Previous configuration file is empty"
+    return 1
+  fi
+  
+  msg "Previous configuration detected"
+  echo ""
+  
+  # Load previous config safely (avoid code injection)
+  
+  # Parse config file safely line by line
+  local line_count=0
+  while IFS='=' read -r key value || [[ -n "$key" ]]; do
+    ((line_count++))
+    
+    # Skip comments and empty lines
+    [[ "$key" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "$key" ]] && continue
+    
+    # Basic validation of key format
+    if [[ ! "$key" =~ ^[A-Z_][A-Z0-9_]*$ ]]; then
+      warn "Invalid key format on line $line_count: '$key'"
+      continue
+    fi
+    
+    # Sanitize value by removing dangerous characters
+    value=$(echo "$value" | tr -d ';|&$`"'"'"'()[]{}*?<>' | head -c 256)
+    
+    # Assign to appropriate variables
+    case "$key" in
+      DOMAIN) DOMAIN="$value" ;;
+      REALITY_PORT) [[ "$value" =~ ^[0-9]+$ ]] && REALITY_PORT="$value" ;;
+      WS_PORT) [[ "$value" =~ ^[0-9]+$ ]] && WS_PORT="$value" ;;
+      HY2_PORT) [[ "$value" =~ ^[0-9]+$ ]] && HY2_PORT="$value" ;;
+      CERT_FULLCHAIN) CERT_FULLCHAIN="$value" ;;
+      CERT_KEY) CERT_KEY="$value" ;;
+      SNI) SNI="$value" ;;
+      UUID) [[ "$value" =~ ^[a-fA-F0-9-]{36}$ ]] && UUID="$value" ;;
+      PUB) PUB="$value" ;;
+      PRIV) PRIV="$value" ;;
+      SID) [[ "$value" =~ ^[a-fA-F0-9]{1,8}$ ]] && SID="$value" ;;
+      HY2_PASS) HY2_PASS="$value" ;;
+      *) warn "Unknown configuration key: '$key'" ;;
+    esac
+  done < "$config_file"
+  
+  # Validate that we read at least some configuration
+  if [[ $line_count -eq 0 ]]; then
+    warn "Configuration file appears to be empty or unreadable"
+    return 1
+  fi
+  
+  # Show previous configuration summary
+  echo -e "${CYAN}Previous Configuration Summary:${N}"
+  echo "  Domain/IP     : ${DOMAIN:-<not set>}"
+  echo "  Reality Port  : ${REALITY_PORT:-443}"
+  echo "  WebSocket Port: ${WS_PORT:-8444}"
+  echo "  Hysteria2 Port: ${HY2_PORT:-8443}"
+  echo "  SNI           : ${SNI:-www.microsoft.com}"
+  echo "  Certificates  : $(if [[ -n "$CERT_FULLCHAIN" ]]; then echo "Yes ($CERT_FULLCHAIN)"; else echo "No (Reality-only)"; fi)"
+  echo ""
+  
+  # Ask user preference
+  echo -e "${Y}Reconfiguration Options:${N}"
+  echo "1) Use previous configuration as base (modify specific settings)"
+  echo "2) Start fresh configuration (ignore previous settings)"
+  echo ""
+  
+  set +e  # Temporarily disable strict mode for user input
+  while true; do
+    read -rp "Choose option [1-2]: " config_choice
+    case "$config_choice" in
+      1)
+        msg "Using previous configuration as base..."
+        # Export previous values as defaults (prefixed with PREV_)
+        export PREV_DOMAIN="$DOMAIN"
+        export PREV_REALITY_PORT="$REALITY_PORT"
+        export PREV_WS_PORT="$WS_PORT" 
+        export PREV_HY2_PORT="$HY2_PORT"
+        export PREV_CERT_FULLCHAIN="$CERT_FULLCHAIN"
+        export PREV_CERT_KEY="$CERT_KEY"
+        export PREV_SNI="$SNI"
+        export USE_PREVIOUS_CONFIG=1
+        break
+        ;;
+      2)
+        msg "Starting fresh configuration..."
+        export USE_PREVIOUS_CONFIG=0
+        break
+        ;;
+      *)
+        warn "Please enter 1 or 2"
+        ;;
+    esac
+  done
+  set -e  # Re-enable strict mode
+  
+  echo ""
+}
+
 allocate_port() {
   local port="$1" fallback="$2" name="$3"
   local retry_count=0
@@ -533,6 +648,10 @@ check_existing_installation() {
             systemctl stop sing-box || warn "Failed to stop service, ports may be in use"
             sleep 2  # Give service time to fully stop
           fi
+          
+          # Load previous configuration for reference
+          load_previous_config
+          
           export SKIP_BINARY_DOWNLOAD=1
           break
           ;;
@@ -817,21 +936,64 @@ HY2_PORT_CHOSEN=""
 REALITY_ONLY_MODE=0
 
 gen_materials() {
+  # Apply previous configuration if selected
+  if [[ "${USE_PREVIOUS_CONFIG:-0}" = "1" ]]; then
+    msg "Applying previous configuration defaults..."
+    
+    # Apply previous configuration values as defaults
+    REALITY_PORT="${PREV_REALITY_PORT:-$REALITY_PORT}"
+    WS_PORT="${PREV_WS_PORT:-$WS_PORT}"
+    HY2_PORT="${PREV_HY2_PORT:-$HY2_PORT}"
+    
+    # Apply certificate configuration if available
+    [[ -n "${PREV_CERT_FULLCHAIN:-}" ]] && CERT_FULLCHAIN="$PREV_CERT_FULLCHAIN"
+    [[ -n "${PREV_CERT_KEY:-}" ]] && CERT_KEY="$PREV_CERT_KEY"
+    
+    # Apply SNI configuration
+    [[ -n "${PREV_SNI:-}" ]] && SNI_DEFAULT="$PREV_SNI"
+    
+    # Show applied configuration summary
+    msg "  Previous ports: Reality=$REALITY_PORT, WebSocket=$WS_PORT, Hysteria2=$HY2_PORT"
+    if [[ -n "$CERT_FULLCHAIN" ]]; then
+      msg "  Previous certificates: Yes ($CERT_FULLCHAIN)"
+    else
+      msg "  Previous certificates: No (Reality-only mode)"
+    fi
+  fi
+  
   if [[ -z "$DOMAIN" ]]; then
     set +e  # Temporarily disable strict mode for user input
     echo "========================================"
     echo "Server Address Configuration"
     echo "========================================"
-    echo "Options:"
-    echo "  1. Press Enter for Reality-only (auto-detect IP)"
-    echo "  2. Enter domain name for full setup (Reality + WS-TLS + Hysteria2)"
-    echo "  3. Enter IP address manually for Reality-only"
+    
+    # Show previous configuration if available
+    if [[ "${USE_PREVIOUS_CONFIG:-0}" = "1" && -n "$PREV_DOMAIN" ]]; then
+      echo -e "${CYAN}Previous Domain/IP: $PREV_DOMAIN${N}"
+      echo "Options:"
+      echo "  1. Press Enter to keep previous domain/IP"
+      echo "  2. Enter new domain name for full setup"
+      echo "  3. Enter new IP address for Reality-only"
+      echo "  4. Leave empty for auto-detect IP (Reality-only)"
+    else
+      echo "Options:"
+      echo "  1. Press Enter for Reality-only (auto-detect IP)"
+      echo "  2. Enter domain name for full setup (Reality + WS-TLS + Hysteria2)"
+      echo "  3. Enter IP address manually for Reality-only"
+    fi
+    
     echo ""
     echo "Note: Domain must be 'DNS only' (gray cloud) in Cloudflare"
     
     local input_attempts=0
     while true; do
-      read -rp "Domain/IP (Enter for auto-detect): " DOMAIN
+      if [[ "${USE_PREVIOUS_CONFIG:-0}" = "1" && -n "$PREV_DOMAIN" ]]; then
+        read -rp "Domain/IP [${PREV_DOMAIN}]: " DOMAIN
+        # Use previous domain if user just pressed Enter
+        DOMAIN="${DOMAIN:-$PREV_DOMAIN}"
+      else
+        read -rp "Domain/IP (Enter for auto-detect): " DOMAIN
+      fi
       
       # Sanitize input to prevent injection
       DOMAIN=$(sanitize_input "$DOMAIN")
@@ -1032,6 +1194,15 @@ write_config() {
       listen: "::",
       listen_port: ($port | tonumber),
       users: [{ uuid: $uuid, flow: "xtls-rprx-vision" }],
+      network: "tcp,udp",
+      packet_encoding: "xudp",
+      multiplex: {
+        enabled: true,
+        protocol: "smux",
+        max_connections: 4,
+        min_streams: 4,
+        padding: false
+      },
       tls: {
         enabled: true,
         server_name: $sni,
@@ -1079,12 +1250,19 @@ write_config() {
         listen: "::",
         listen_port: ($port | tonumber),
         users: [{ uuid: $uuid }],
+        multiplex: {
+          enabled: true,
+          protocol: "smux",
+          max_connections: 4,
+          min_streams: 4,
+          padding: false
+        },
         tls: {
           enabled: true,
           server_name: $domain,
           certificate_path: $cert_path,
           key_path: $key_path,
-          alpn: ["http/1.1"]
+          alpn: ["h2", "http/1.1"]
         },
         transport: { type: "ws", path: "/ws" }
       }' 2>/dev/null); then
@@ -1136,9 +1314,15 @@ write_config() {
       {
         "protocol": "dns",
         "action": "hijack-dns"
+      },
+      {
+        "protocol": "quic",
+        "action": "direct"
       }
     ],
-    "auto_detect_interface": true
+    "auto_detect_interface": true,
+    "override_android_vpn": true,
+    "final": "direct"
   }' 2>/dev/null); then
     die "Failed to add route configuration"
   fi
