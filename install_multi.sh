@@ -182,6 +182,70 @@ port_in_use() {
   return 1
 }
 
+# Generate UUID with multiple fallback methods
+generate_uuid() {
+  # Method 1: Linux kernel UUID (most reliable on Linux)
+  if [[ -f /proc/sys/kernel/random/uuid ]]; then
+    cat /proc/sys/kernel/random/uuid
+    return 0
+  fi
+  
+  # Method 2: uuidgen command (available on most Unix systems)
+  if command -v uuidgen >/dev/null 2>&1; then
+    uuidgen | tr '[:upper:]' '[:lower:]'
+    return 0
+  fi
+  
+  # Method 3: Python (widely available)
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import uuid; print(str(uuid.uuid4()))'
+    return 0
+  elif command -v python >/dev/null 2>&1; then
+    python -c 'import uuid; print(str(uuid.uuid4()))'
+    return 0
+  fi
+  
+  # Method 4: OpenSSL with proper UUID v4 format
+  # UUID v4 format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+  # where y is one of [8, 9, a, b]
+  local hex=$(openssl rand -hex 16)
+  printf '%s-%s-4%s-%x%s-%s' \
+    "${hex:0:8}" \
+    "${hex:8:4}" \
+    "${hex:13:3}" \
+    $(( 8 + RANDOM % 4 )) \
+    "${hex:17:3}" \
+    "${hex:20:12}"
+}
+
+# Generate Reality keypair with proper error handling
+generate_reality_keypair() {
+  local output
+  output=$("$SB_BIN" generate reality-keypair 2>&1) || {
+    err "Failed to generate Reality keypair: $output"
+    return 1
+  }
+  
+  # Extract and validate keys
+  local priv pub
+  priv=$(echo "$output" | grep "PrivateKey:" | awk '{print $2}')
+  pub=$(echo "$output" | grep "PublicKey:" | awk '{print $2}')
+  
+  if [[ -z "$priv" || -z "$pub" ]]; then
+    err "Failed to extract keys from Reality keypair output"
+    return 1
+  fi
+  
+  echo "$priv $pub"
+  return 0
+}
+
+# Generate secure random hex string
+generate_hex_string() {
+  local length="${1:-16}"
+  openssl rand -hex "$length"
+}
+
 allocate_port() {
   local port="$1" fallback="$2" name="$3"
   local retry_count=0
@@ -810,20 +874,52 @@ gen_materials() {
     fi
   fi
 
-  msg "Generating Reality keypair / UUID / short_id / Hy2 password ..."
-  # shellcheck disable=SC2034
-  read PRIV PUB < <("$SB_BIN" generate reality-keypair | awk '/PrivateKey:/{p=$2} /PublicKey:/{q=$2} END{print p" "q}')
-  [[ -n "$PRIV" && -n "$PUB" ]] || die "Failed to generate Reality keypair"
-  UUID="$(cat /proc/sys/kernel/random/uuid)"
-  SID="$(openssl rand -hex 4)"
-  # Validate short_id format (sing-box requires hex string, max 8 chars)
-  [[ "$SID" =~ ^[0-9a-fA-F]{1,8}$ ]] || die "Invalid short ID format: $SID"
-  [[ ${#SID} -le 8 ]] || die "Short ID too long (max 8 chars): $SID"
-  HY2_PASS="$(openssl rand -hex 16)"
+  msg "Generating security credentials..."
+  
+  # Step 1: Generate Reality keypair
+  msg "  - Generating Reality keypair..."
+  local keypair
+  keypair=$(generate_reality_keypair) || die "Failed to generate Reality keypair"
+  read PRIV PUB <<< "$keypair"
+  success "  ✓ Reality keypair generated"
+  
+  # Step 2: Generate UUID
+  msg "  - Generating UUID..."
+  UUID="$(generate_uuid)"
+  [[ -n "$UUID" ]] || die "Failed to generate UUID"
+  success "  ✓ UUID: ${UUID:0:8}..."
+  
+  # Step 3: Generate short ID (8 hex chars for sing-box)
+  msg "  - Generating short ID..."
+  SID="$(generate_hex_string 4)"  # 4 bytes = 8 hex chars
+  [[ -n "$SID" && ${#SID} -eq 8 ]] || die "Failed to generate valid short ID"
+  success "  ✓ Short ID: $SID"
+  
+  # Step 4: Generate Hysteria2 password
+  msg "  - Generating Hysteria2 password..."
+  HY2_PASS="$(generate_hex_string 16)"
+  [[ -n "$HY2_PASS" ]] || die "Failed to generate Hysteria2 password"
+  success "  ✓ Hysteria2 password generated"
 
+  msg "Allocating network ports..."
+  
+  # Allocate Reality port
+  msg "  - Checking Reality port..."
   REALITY_PORT_CHOSEN="$(allocate_port "$REALITY_PORT" "$REALITY_PORT_FALLBACK" "Reality")"
+  [[ -n "$REALITY_PORT_CHOSEN" ]] || die "Failed to allocate Reality port"
+  success "  ✓ Reality port: $REALITY_PORT_CHOSEN"
+  
+  # Allocate WebSocket port
+  msg "  - Checking WebSocket port..."
   WS_PORT_CHOSEN="$(allocate_port "$WS_PORT" "$WS_PORT_FALLBACK" "WebSocket")"
+  [[ -n "$WS_PORT_CHOSEN" ]] || die "Failed to allocate WebSocket port"
+  success "  ✓ WebSocket port: $WS_PORT_CHOSEN"
+  
+  # Allocate Hysteria2 port
+  msg "  - Checking Hysteria2 port..."
   HY2_PORT_CHOSEN="$(allocate_port "$HY2_PORT" "$HY2_PORT_FALLBACK" "Hysteria2")"
+  [[ -n "$HY2_PORT_CHOSEN" ]] || die "Failed to allocate Hysteria2 port"
+  success "  ✓ Hysteria2 port: $HY2_PORT_CHOSEN"
   
   # Validate all ports are available after allocation
   for port_info in "Reality:$REALITY_PORT_CHOSEN" "WebSocket:$WS_PORT_CHOSEN" "Hysteria2:$HY2_PORT_CHOSEN"; do
@@ -842,13 +938,36 @@ write_config() {
   msg "Writing $SB_CONF ..."
   mkdir -p "$SB_CONF_DIR"
   
-  # Validate required variables before config generation
-  [[ -n "$UUID" ]] || die "UUID is not set. Configuration generation failed."
-  [[ -n "$REALITY_PORT_CHOSEN" ]] || die "Reality port is not set. Configuration generation failed."
-  [[ -n "$SNI_DEFAULT" ]] || die "SNI is not set. Configuration generation failed."
-  [[ -n "$PRIV" ]] || die "Reality private key is not set. Configuration generation failed."
-  [[ -n "$SID" ]] || die "Reality short ID is not set. Configuration generation failed."
-  [[ -n "$LOG_LEVEL" ]] || die "Log level is not set. Configuration generation failed."
+  # Validate all required variables are set
+  msg "Validating configuration parameters..."
+  validate_config_vars() {
+    local errors=0
+    local var_name var_value
+    
+    # Check each required variable
+    for var_spec in \
+      "UUID:UUID" \
+      "REALITY_PORT_CHOSEN:Reality port" \
+      "SNI_DEFAULT:SNI domain" \
+      "PRIV:Reality private key" \
+      "SID:Reality short ID" \
+      "LOG_LEVEL:Log level"; do
+      
+      IFS=':' read -r var_name var_desc <<< "$var_spec"
+      var_value="${!var_name}"
+      
+      if [[ -z "$var_value" ]]; then
+        err "  ✗ $var_desc is not set"
+        ((errors++))
+      else
+        success "  ✓ $var_desc configured"
+      fi
+    done
+    
+    return $errors
+  }
+  
+  validate_config_vars || die "Configuration validation failed. Please check the errors above."
   
   # Create temporary file for atomic write with secure permissions
   local temp_conf
@@ -894,7 +1013,8 @@ write_config() {
   fi
   
   # Add Reality inbound (always present)
-  if ! reality_config=$(jq -n \
+  msg "  - Creating Reality inbound configuration..."
+  reality_config=$(jq -n \
     --arg uuid "$UUID" \
     --arg port "$REALITY_PORT_CHOSEN" \
     --arg sni "$SNI_DEFAULT" \
@@ -918,9 +1038,12 @@ write_config() {
         },
         alpn: ["h2", "http/1.1"]
       }
-    }' 2>/dev/null); then
-    die "Failed to create Reality configuration with jq"
-  fi
+    }' 2>&1) || {
+    err "Failed to create Reality configuration. jq output:"
+    err "$reality_config"
+    die "JSON generation failed. This usually indicates a bug in the script."
+  }
+  success "  ✓ Reality inbound configured"
   
   # Add Reality inbound to base config
   if ! base_config=$(echo "$base_config" | jq --argjson reality "$reality_config" '.inbounds += [$reality]' 2>/dev/null); then
