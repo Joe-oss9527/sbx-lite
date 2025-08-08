@@ -175,6 +175,63 @@ sudo sbx uninstall
 - Certificates: `/etc/ssl/sbx/<domain>/fullchain.pem` and `privkey.pem`
 - Management tools: `/usr/local/bin/sbx-manager` and `/usr/local/bin/sbx` (symlink)
 
+## Official Documentation Access (Git Submodule)
+
+This project includes the official sing-box repository as a git submodule for easy access to the latest documentation, configuration examples, and source code reference.
+
+### Submodule Location
+- **Path**: `docs/sing-box-official/`
+- **Contains**: Complete official sing-box repository
+- **Key Resources**:
+  - Documentation: `docs/sing-box-official/docs/`
+  - Configuration Examples: `docs/sing-box-official/test/config/`
+  - Source Code: `docs/sing-box-official/protocol/`, `docs/sing-box-official/option/`
+  - Release Configs: `docs/sing-box-official/release/config/`
+
+### Submodule Management Commands
+```bash
+# Initialize and update submodule (after cloning this repository)
+git submodule update --init --recursive
+
+# Update submodule to latest official version
+git submodule update --remote docs/sing-box-official
+
+# Check submodule status
+git submodule status
+
+# Update all submodules to latest
+git submodule update --remote --merge
+```
+
+### Key Documentation Paths
+- **Listen Configuration**: `docs/sing-box-official/docs/configuration/shared/listen/`
+- **Inbound Configuration**: `docs/sing-box-official/docs/configuration/inbound/`
+- **VLESS Documentation**: `docs/sing-box-official/docs/configuration/inbound/vless/`
+- **Reality Configuration**: `docs/sing-box-official/docs/configuration/shared/tls/`
+- **Migration Guide**: `docs/sing-box-official/docs/migration.md`
+
+### Configuration Reference Examples
+- **VLESS-Reality**: `docs/sing-box-official/test/config/vless-server.json`
+- **System Service**: `docs/sing-box-official/release/config/sing-box.service`
+- **Example Configurations**: `docs/sing-box-official/release/config/config.json`
+
+### Using Submodule for Development
+```bash
+# View official configuration examples
+ls docs/sing-box-official/test/config/
+
+# Read official documentation
+cat docs/sing-box-official/docs/configuration/inbound/vless/index.md
+
+# Check latest migration requirements
+cat docs/sing-box-official/docs/migration.md
+
+# Reference systemd service configuration
+cat docs/sing-box-official/release/config/sing-box.service
+```
+
+This ensures you always have access to the most up-to-date official documentation and can reference official configuration examples when modifying this deployment script.
+
 ## Bash Coding Standards & Security Best Practices
 
 ### Code Quality Standards
