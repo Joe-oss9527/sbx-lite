@@ -857,13 +857,17 @@ ensure_tools() {
   elif have dnf; then
     if dnf install -y qrencode 2>/dev/null; then
       qrencode_installed=true
-    elif dnf install -y epel-release 2>/dev/null && dnf install -y qrencode 2>/dev/null; then
+    elif dnf install -y epel-release 2>/dev/null && \
+         dnf config-manager --set-enabled epel 2>/dev/null && \
+         dnf install -y qrencode 2>/dev/null; then
       qrencode_installed=true
     fi
   elif have yum; then
     if yum install -y qrencode 2>/dev/null; then
       qrencode_installed=true
-    elif yum install -y epel-release 2>/dev/null && yum install -y qrencode 2>/dev/null; then
+    elif yum install -y epel-release 2>/dev/null && \
+         yum-config-manager --enable epel 2>/dev/null && \
+         yum install -y qrencode 2>/dev/null; then
       qrencode_installed=true
     fi
   fi
@@ -872,7 +876,7 @@ ensure_tools() {
     success "qrencode installed successfully - QR code generation available"
   else
     warn "qrencode installation failed - QR code generation will be skipped"
-    info "You can install qrencode later manually: dnf install epel-release && dnf install qrencode"
+    info "You can install qrencode later manually: dnf install epel-release && dnf config-manager --set-enabled epel && dnf install qrencode"
   fi
 }
 
