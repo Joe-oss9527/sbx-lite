@@ -264,18 +264,18 @@ generate_qr_code() {
   # Check URI length (QR code capacity limitation)
   local uri_length=${#uri}
   if [[ $uri_length -gt 1500 ]]; then
-    warn "URI较长 ($uri_length 字符)，二维码可能密集"
+    warn "URI is long ($uri_length chars), QR code may be dense"
   fi
   
   echo
-  success "$name 配置二维码："
+  success "$name configuration QR code:"
   echo "┌─────────────────────────────────────┐"
   # Generate ASCII QR code for terminal display
   if qrencode -t UTF8 -s 1 -m 1 "$uri" 2>/dev/null; then
     echo "└─────────────────────────────────────┘"
-    info "扫描二维码导入配置到客户端"
+    info "Scan QR code to import config to client"
   else
-    warn "二维码生成失败"
+    warn "QR code generation failed"
     return 1
   fi
   echo
@@ -297,11 +297,11 @@ generate_all_qr_codes() {
   
   # Check if qrencode is available
   if ! have qrencode; then
-    info "qrencode未安装，跳过二维码生成"
+    info "qrencode not installed, skipping QR code generation"
     return 1
   fi
   
-  info "生成配置二维码..."
+  info "Generating configuration QR codes..."
   
   # Always generate Reality QR code
   if [[ -n "$domain" && -n "$reality_port" && -n "$uuid" && -n "$pub_key" && -n "$short_id" ]]; then
@@ -1683,13 +1683,13 @@ case "$1" in
             echo "  URI      = ${URI_HY2}"
         fi
         echo
-        echo -e "${Y}Notes${N}: Reality/Hy2 建议灰云；WS-TLS 可灰/橙云。"
+        echo -e "${Y}Notes${N}: Reality/Hy2 suggest gray cloud; WS-TLS can use gray/orange cloud."
         
         # Optional: Generate QR codes
         if command -v qrencode >/dev/null 2>&1; then
             echo
-            echo -e "${CYAN}二维码:${N}"
-            echo -e "  ${G}sbx qr${N}            - 显示所有协议的二维码"
+            echo -e "${CYAN}QR codes:${N}"
+            echo -e "  ${G}sbx qr${N}            - Show QR codes for all protocols"
         fi
         ;;
         
@@ -1707,7 +1707,7 @@ case "$1" in
         # Load saved info
         source /etc/sing-box/client-info.txt
         
-        echo -e "${B}=== 配置二维码 ===${N}"
+        echo -e "${B}=== Configuration QR Codes ===${N}"
         
         # Generate Reality QR code
         if [[ -n "$UUID" && -n "$DOMAIN" && -n "$PUBLIC_KEY" && -n "$SHORT_ID" ]]; then
@@ -1715,7 +1715,7 @@ case "$1" in
             echo
             echo -e "${G}VLESS-REALITY:${N}"
             echo "┌─────────────────────────────────────┐"
-            qrencode -t UTF8 -s 1 -m 1 "$URI_REAL" 2>/dev/null || echo "二维码生成失败"
+            qrencode -t UTF8 -s 1 -m 1 "$URI_REAL" 2>/dev/null || echo "QR code generation failed"
             echo "└─────────────────────────────────────┘"
         fi
         
@@ -1725,19 +1725,19 @@ case "$1" in
             echo
             echo -e "${G}VLESS-WS-TLS:${N}"
             echo "┌─────────────────────────────────────┐"
-            qrencode -t UTF8 -s 1 -m 1 "$URI_WS" 2>/dev/null || echo "二维码生成失败"
+            qrencode -t UTF8 -s 1 -m 1 "$URI_WS" 2>/dev/null || echo "QR code generation failed"
             echo "└─────────────────────────────────────┘"
             
             URI_HY2="hysteria2://${HY2_PASS}@${DOMAIN}:${HY2_PORT}/?sni=${DOMAIN}&alpn=h3&insecure=0#Hysteria2-${DOMAIN}"
             echo
             echo -e "${G}Hysteria2:${N}"
             echo "┌─────────────────────────────────────┐"
-            qrencode -t UTF8 -s 1 -m 1 "$URI_HY2" 2>/dev/null || echo "二维码生成失败"
+            qrencode -t UTF8 -s 1 -m 1 "$URI_HY2" 2>/dev/null || echo "QR code generation failed"
             echo "└─────────────────────────────────────┘"
         fi
         
         echo
-        echo -e "${Y}提示${N}: 使用手机扫描二维码导入代理配置"
+        echo -e "${Y}Tip${N}: Use phone to scan QR code to import proxy configuration"
         ;;
         
     restart)
@@ -2000,7 +2000,7 @@ print_summary() {
     fi
   fi
   echo
-  echo -e "${Y}Notes${N}: Reality/Hy2 建议灰云；WS-TLS 可灰/橙云。DNS-01 推荐；HTTP-01 需 :80 可达且未被占用。"
+  echo -e "${Y}Notes${N}: Reality/Hy2 suggest gray cloud; WS-TLS can use gray/orange cloud. DNS-01 recommended; HTTP-01 requires port :80 accessible and unused."
   echo
   echo -e "${CYAN}Management Commands:${N}"
   echo -e "  ${G}sbx info${N}          - Show configuration and URIs"

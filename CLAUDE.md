@@ -251,6 +251,7 @@ This ensures you always have access to the most up-to-date official documentatio
 - **Network Operations**: Always use timeout protection
 - **JSON Generation**: Use `jq` with explicit error checking, never string concatenation
 - **Cleanup**: Use `trap` for reliable cleanup on exit/interrupt
+- **Character Encoding**: Never use Chinese characters in script output - use only English to ensure compatibility with terminals that don't support Unicode display
 
 ## Client Compatibility Requirements
 - Script generates sing-box-compatible Reality configurations
