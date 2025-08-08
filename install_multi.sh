@@ -271,7 +271,7 @@ generate_qr_code() {
   success "$name configuration QR code:"
   echo "┌─────────────────────────────────────┐"
   # Generate ASCII QR code for terminal display
-  if qrencode -t UTF8 -s 1 -m 1 "$uri" 2>/dev/null; then
+  if qrencode -t UTF8 -m 0 "$uri" 2>/dev/null; then
     echo "└─────────────────────────────────────┘"
     info "Scan QR code to import config to client"
   else
@@ -1750,7 +1750,7 @@ case "$1" in
             echo
             echo -e "${G}VLESS-REALITY:${N}"
             echo "┌─────────────────────────────────────┐"
-            qrencode -t UTF8 -s 1 -m 1 "$URI_REAL" 2>/dev/null || echo "QR code generation failed"
+            qrencode -t UTF8 -m 0 "$URI_REAL" 2>/dev/null || echo "QR code generation failed"
             echo "└─────────────────────────────────────┘"
         fi
         
@@ -1760,14 +1760,14 @@ case "$1" in
             echo
             echo -e "${G}VLESS-WS-TLS:${N}"
             echo "┌─────────────────────────────────────┐"
-            qrencode -t UTF8 -s 1 -m 1 "$URI_WS" 2>/dev/null || echo "QR code generation failed"
+            qrencode -t UTF8 -m 0 "$URI_WS" 2>/dev/null || echo "QR code generation failed"
             echo "└─────────────────────────────────────┘"
             
             URI_HY2="hysteria2://${HY2_PASS}@${DOMAIN}:${HY2_PORT}/?sni=${DOMAIN}&alpn=h3&insecure=0#Hysteria2-${DOMAIN}"
             echo
             echo -e "${G}Hysteria2:${N}"
             echo "┌─────────────────────────────────────┐"
-            qrencode -t UTF8 -s 1 -m 1 "$URI_HY2" 2>/dev/null || echo "QR code generation failed"
+            qrencode -t UTF8 -m 0 "$URI_HY2" 2>/dev/null || echo "QR code generation failed"
             echo "└─────────────────────────────────────┘"
         fi
         
