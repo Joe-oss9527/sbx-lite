@@ -832,16 +832,47 @@ check_existing_installation() {
 }
 
 ensure_tools() {
-  msg "Installing tools (curl/wget, tar, jq, openssl, ca-certificates, lsof, qrencode)..."
+  msg "Installing essential tools (curl/wget, tar, jq, openssl, ca-certificates, lsof)..."
+  
+  # Install essential tools first
   if have apt-get; then
     apt-get update -y
-    DEBIAN_FRONTEND=noninteractive apt-get install -y curl wget tar jq openssl ca-certificates lsof qrencode
+    DEBIAN_FRONTEND=noninteractive apt-get install -y curl wget tar jq openssl ca-certificates lsof
   elif have dnf; then
-    dnf install -y curl wget tar jq openssl ca-certificates lsof qrencode
+    dnf install -y curl wget tar jq openssl ca-certificates lsof
   elif have yum; then
-    yum install -y curl wget tar jq openssl ca-certificates lsof qrencode
+    yum install -y curl wget tar jq openssl ca-certificates lsof
   else
-    warn "Unknown package manager; please ensure curl/wget, tar, jq, openssl, lsof, qrencode are installed."
+    warn "Unknown package manager; please ensure curl/wget, tar, jq, openssl, lsof are installed."
+  fi
+  
+  # Try to install qrencode separately (optional for QR code generation)
+  msg "Attempting to install qrencode for QR code generation (optional)..."
+  local qrencode_installed=false
+  
+  if have apt-get; then
+    if DEBIAN_FRONTEND=noninteractive apt-get install -y qrencode 2>/dev/null; then
+      qrencode_installed=true
+    fi
+  elif have dnf; then
+    if dnf install -y qrencode 2>/dev/null; then
+      qrencode_installed=true
+    elif dnf install -y epel-release 2>/dev/null && dnf install -y qrencode 2>/dev/null; then
+      qrencode_installed=true
+    fi
+  elif have yum; then
+    if yum install -y qrencode 2>/dev/null; then
+      qrencode_installed=true
+    elif yum install -y epel-release 2>/dev/null && yum install -y qrencode 2>/dev/null; then
+      qrencode_installed=true
+    fi
+  fi
+  
+  if [[ "$qrencode_installed" == "true" ]]; then
+    success "qrencode installed successfully - QR code generation available"
+  else
+    warn "qrencode installation failed - QR code generation will be skipped"
+    info "You can install qrencode later manually: dnf install epel-release && dnf install qrencode"
   fi
 }
 
