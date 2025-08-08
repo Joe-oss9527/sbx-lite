@@ -246,6 +246,69 @@ generate_hex_string() {
   openssl rand -hex "$length"
 }
 
+# Detect IPv6 support on the server
+detect_ipv6_support() {
+  local ipv6_supported=false
+  
+  # Check 1: Kernel IPv6 support
+  if [[ -f /proc/net/if_inet6 ]]; then
+    # Check 2: IPv6 routing table
+    if ip -6 route show 2>/dev/null | grep -q "default\|::/0"; then
+      # Check 3: Actual connectivity test to a reliable IPv6 DNS server
+      if timeout 3 ping6 -c 1 -W 2 2001:4860:4860::8888 >/dev/null 2>&1; then
+        ipv6_supported=true
+      else
+        # Fallback test: check if we can create IPv6 socket
+        if timeout 3 bash -c 'exec 3<>/dev/tcp/[::1]/22' 2>/dev/null; then
+          exec 3<&-
+          exec 3>&-
+          ipv6_supported=true
+        fi
+      fi
+    fi
+  fi
+  
+  echo "$ipv6_supported"
+}
+
+# Choose optimal listen address based on network stack support
+choose_listen_address() {
+  local ipv6_supported="$1"
+  
+  if [[ "$ipv6_supported" == "true" ]]; then
+    echo "::"  # Dual-stack mode: supports both IPv4 and IPv6
+  else
+    echo "0.0.0.0"  # IPv4-only mode
+  fi
+}
+
+# Validate Reality destination connectivity
+validate_reality_dest() {
+  local sni="$1"
+  local ipv6_supported="$2"
+  
+  msg "Testing connectivity to Reality destination: $sni"
+  
+  # Test IPv4 connection (always required)
+  if ! timeout 5 bash -c "echo '' | openssl s_client -connect $sni:443 -servername $sni" >/dev/null 2>&1; then
+    warn "IPv4 connection to $sni failed, may affect Reality handshake"
+    return 1
+  fi
+  
+  # Test IPv6 connection if supported
+  if [[ "$ipv6_supported" == "true" ]]; then
+    if ! timeout 5 bash -c "echo '' | openssl s_client -connect [$sni]:443 -servername $sni" >/dev/null 2>&1; then
+      warn "IPv6 connection to $sni failed, but IPv4 works"
+    else
+      success "Both IPv4 and IPv6 connectivity to $sni verified"
+      return 0
+    fi
+  fi
+  
+  success "IPv4 connectivity to Reality destination $sni verified"
+  return 0
+}
+
 # Load and optionally reuse previous configuration
 load_previous_config() {
   local config_file="/etc/sing-box/client-info.txt"
@@ -1106,6 +1169,25 @@ write_config() {
   msg "Writing $SB_CONF ..."
   mkdir -p "$SB_CONF_DIR"
   
+  # Detect network stack support
+  msg "Detecting network stack support..."
+  local ipv6_supported
+  ipv6_supported=$(detect_ipv6_support)
+  
+  local listen_addr
+  listen_addr=$(choose_listen_address "$ipv6_supported")
+  
+  if [[ "$ipv6_supported" == "true" ]]; then
+    success "  ✓ IPv6 support detected - using dual-stack configuration ($listen_addr)"
+  else
+    warn "  ⚠ IPv6 not available - using IPv4-only configuration ($listen_addr)"
+  fi
+  
+  # Validate Reality destination connectivity
+  if ! validate_reality_dest "$SNI_DEFAULT" "$ipv6_supported"; then
+    warn "Reality destination connectivity issues detected, but continuing with installation"
+  fi
+  
   # Validate all required variables are set
   msg "Validating configuration parameters..."
   validate_config_vars() {
@@ -1185,13 +1267,14 @@ write_config() {
   reality_config=$(jq -n \
     --arg uuid "$UUID" \
     --arg port "$REALITY_PORT_CHOSEN" \
+    --arg listen_addr "$listen_addr" \
     --arg sni "$SNI_DEFAULT" \
     --arg priv "$PRIV" \
     --arg sid "$SID" \
     '{
       type: "vless",
       tag: "in-reality",
-      listen: "::",
+      listen: $listen_addr,
       listen_port: ($port | tonumber),
       users: [{ uuid: $uuid, flow: "xtls-rprx-vision" }],
       multiplex: {
@@ -1241,13 +1324,14 @@ write_config() {
     if ! ws_config=$(jq -n \
       --arg uuid "$UUID" \
       --arg port "$WS_PORT_CHOSEN" \
+      --arg listen_addr "$listen_addr" \
       --arg domain "$DOMAIN" \
       --arg cert_path "$CERT_FULLCHAIN" \
       --arg key_path "$CERT_KEY" \
       '{
         type: "vless",
         tag: "in-ws",
-        listen: "::",
+        listen: $listen_addr,
         listen_port: ($port | tonumber),
         users: [{ uuid: $uuid }],
         multiplex: {
@@ -1275,12 +1359,13 @@ write_config() {
     if ! hy2_config=$(jq -n \
       --arg password "$HY2_PASS" \
       --arg port "$HY2_PORT_CHOSEN" \
+      --arg listen_addr "$listen_addr" \
       --arg cert_path "$CERT_FULLCHAIN" \
       --arg key_path "$CERT_KEY" \
       '{
         type: "hysteria2",
         tag: "in-hy2",
-        listen: "::",
+        listen: $listen_addr,
         listen_port: ($port | tonumber),
         users: [{ password: $password }],
         up_mbps: 100,
@@ -1321,6 +1406,26 @@ write_config() {
     "auto_detect_interface": true
   }' 2>/dev/null); then
     die "Failed to add route configuration"
+  fi
+  
+  # Optimize outbound configuration based on network stack
+  if [[ "$ipv6_supported" == "false" ]]; then
+    msg "  - Optimizing outbound for IPv4-only network"
+    if ! base_config=$(echo "$base_config" | jq '.outbounds[0] += {
+      "bind_interface": "",
+      "routing_mark": 0,
+      "reuse_addr": false,
+      "connect_timeout": "5s",
+      "tcp_fast_open": false,
+      "udp_fragment": true,
+      "domain_strategy": "ipv4_only"
+    }' 2>/dev/null); then
+      warn "Failed to add IPv4-only optimization, continuing with default configuration"
+    else
+      success "  ✓ IPv4-only network optimization applied"
+    fi
+  else
+    msg "  - Using default outbound configuration for dual-stack network"
   fi
   
   # Write configuration to temporary file
