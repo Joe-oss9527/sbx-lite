@@ -246,6 +246,85 @@ generate_hex_string() {
   openssl rand -hex "$length"
 }
 
+# Generate ASCII QR code for URI (terminal display only)
+generate_qr_code() {
+  local uri="$1"
+  local name="${2:-Config}"
+  
+  # Validate input
+  if [[ -z "$uri" ]]; then
+    return 1
+  fi
+  
+  # Check if qrencode is available
+  if ! have qrencode; then
+    return 1
+  fi
+  
+  # Check URI length (QR code capacity limitation)
+  local uri_length=${#uri}
+  if [[ $uri_length -gt 1500 ]]; then
+    warn "URI较长 ($uri_length 字符)，二维码可能密集"
+  fi
+  
+  echo
+  success "$name 配置二维码："
+  echo "┌─────────────────────────────────────┐"
+  # Generate ASCII QR code for terminal display
+  if qrencode -t UTF8 -s 1 -m 1 "$uri" 2>/dev/null; then
+    echo "└─────────────────────────────────────┘"
+    info "扫描二维码导入配置到客户端"
+  else
+    warn "二维码生成失败"
+    return 1
+  fi
+  echo
+  
+  return 0
+}
+
+# Generate ASCII QR codes for all protocol URIs
+generate_all_qr_codes() {
+  local domain="$1"
+  local reality_port="$2"
+  local ws_port="$3" 
+  local hy2_port="$4"
+  local uuid="$5"
+  local pub_key="$6"
+  local short_id="$7"
+  local hy2_pass="$8"
+  local cert_available="${9:-false}"
+  
+  # Check if qrencode is available
+  if ! have qrencode; then
+    info "qrencode未安装，跳过二维码生成"
+    return 1
+  fi
+  
+  info "生成配置二维码..."
+  
+  # Always generate Reality QR code
+  if [[ -n "$domain" && -n "$reality_port" && -n "$uuid" && -n "$pub_key" && -n "$short_id" ]]; then
+    local reality_uri="vless://${uuid}@${domain}:${reality_port}?encryption=none&security=reality&flow=xtls-rprx-vision&sni=${SNI_DEFAULT}&pbk=${pub_key}&sid=${short_id}&type=tcp&fp=chrome#Reality-${domain}"
+    generate_qr_code "$reality_uri" "VLESS-Reality"
+  fi
+  
+  # Generate certificate-based protocol QR codes if available
+  if [[ "$cert_available" == "true" && -n "$domain" && -n "$uuid" && -n "$hy2_pass" ]]; then
+    # WS-TLS QR code
+    if [[ -n "$ws_port" ]]; then
+      local ws_uri="vless://${uuid}@${domain}:${ws_port}?encryption=none&security=tls&type=ws&host=${domain}&path=/ws&sni=${domain}&fp=chrome#WS-TLS-${domain}"
+      generate_qr_code "$ws_uri" "VLESS-WS-TLS"
+    fi
+    
+    # Hysteria2 QR code
+    if [[ -n "$hy2_port" ]]; then
+      local hy2_uri="hysteria2://${hy2_pass}@${domain}:${hy2_port}/?sni=${domain}&alpn=h3&insecure=0#Hysteria2-${domain}"
+      generate_qr_code "$hy2_uri" "Hysteria2"
+    fi
+  fi
+}
+
 # Detect IPv6 support on the server
 detect_ipv6_support() {
   local ipv6_supported=false
@@ -753,16 +832,16 @@ check_existing_installation() {
 }
 
 ensure_tools() {
-  msg "Installing tools (curl/wget, tar, jq, openssl, ca-certificates, lsof)..."
+  msg "Installing tools (curl/wget, tar, jq, openssl, ca-certificates, lsof, qrencode)..."
   if have apt-get; then
     apt-get update -y
-    DEBIAN_FRONTEND=noninteractive apt-get install -y curl wget tar jq openssl ca-certificates lsof
+    DEBIAN_FRONTEND=noninteractive apt-get install -y curl wget tar jq openssl ca-certificates lsof qrencode
   elif have dnf; then
-    dnf install -y curl wget tar jq openssl ca-certificates lsof
+    dnf install -y curl wget tar jq openssl ca-certificates lsof qrencode
   elif have yum; then
-    yum install -y curl wget tar jq openssl ca-certificates lsof
+    yum install -y curl wget tar jq openssl ca-certificates lsof qrencode
   else
-    warn "Unknown package manager; please ensure curl/wget, tar, jq, openssl, lsof are installed."
+    warn "Unknown package manager; please ensure curl/wget, tar, jq, openssl, lsof, qrencode are installed."
   fi
 }
 
@@ -1605,6 +1684,60 @@ case "$1" in
         fi
         echo
         echo -e "${Y}Notes${N}: Reality/Hy2 建议灰云；WS-TLS 可灰/橙云。"
+        
+        # Optional: Generate QR codes
+        if command -v qrencode >/dev/null 2>&1; then
+            echo
+            echo -e "${CYAN}二维码:${N}"
+            echo -e "  ${G}sbx qr${N}            - 显示所有协议的二维码"
+        fi
+        ;;
+        
+    qr)
+        if [[ ! -f "/etc/sing-box/client-info.txt" ]]; then
+            echo -e "${R}[ERR]${N} Client info not found."
+            exit 1
+        fi
+        
+        if ! command -v qrencode >/dev/null 2>&1; then
+            echo -e "${R}[ERR]${N} qrencode not installed. Install with: apt install qrencode"
+            exit 1
+        fi
+        
+        # Load saved info
+        source /etc/sing-box/client-info.txt
+        
+        echo -e "${B}=== 配置二维码 ===${N}"
+        
+        # Generate Reality QR code
+        if [[ -n "$UUID" && -n "$DOMAIN" && -n "$PUBLIC_KEY" && -n "$SHORT_ID" ]]; then
+            URI_REAL="vless://${UUID}@${DOMAIN}:${REALITY_PORT}?encryption=none&security=reality&flow=xtls-rprx-vision&sni=${SNI}&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&type=tcp&fp=chrome#Reality-${DOMAIN}"
+            echo
+            echo -e "${G}VLESS-REALITY:${N}"
+            echo "┌─────────────────────────────────────┐"
+            qrencode -t UTF8 -s 1 -m 1 "$URI_REAL" 2>/dev/null || echo "二维码生成失败"
+            echo "└─────────────────────────────────────┘"
+        fi
+        
+        # Generate WS-TLS QR code if certificates exist
+        if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" && -n "$UUID" && -n "$DOMAIN" ]]; then
+            URI_WS="vless://${UUID}@${DOMAIN}:${WS_PORT}?encryption=none&security=tls&type=ws&host=${DOMAIN}&path=/ws&sni=${DOMAIN}&fp=chrome#WS-TLS-${DOMAIN}"
+            echo
+            echo -e "${G}VLESS-WS-TLS:${N}"
+            echo "┌─────────────────────────────────────┐"
+            qrencode -t UTF8 -s 1 -m 1 "$URI_WS" 2>/dev/null || echo "二维码生成失败"
+            echo "└─────────────────────────────────────┘"
+            
+            URI_HY2="hysteria2://${HY2_PASS}@${DOMAIN}:${HY2_PORT}/?sni=${DOMAIN}&alpn=h3&insecure=0#Hysteria2-${DOMAIN}"
+            echo
+            echo -e "${G}Hysteria2:${N}"
+            echo "┌─────────────────────────────────────┐"
+            qrencode -t UTF8 -s 1 -m 1 "$URI_HY2" 2>/dev/null || echo "二维码生成失败"
+            echo "└─────────────────────────────────────┘"
+        fi
+        
+        echo
+        echo -e "${Y}提示${N}: 使用手机扫描二维码导入代理配置"
         ;;
         
     restart)
@@ -1737,9 +1870,10 @@ case "$1" in
         ;;
         
     *)
-        echo "Usage: $0 {status|info|restart|start|stop|log|check|uninstall}"
+        echo "Usage: $0 {status|info|qr|restart|start|stop|log|check|uninstall}"
         echo "  status    - Check service status"
-        echo "  info      - Show client configuration"  
+        echo "  info      - Show client configuration"
+        echo "  qr        - Show QR codes for easy client import"
         echo "  restart   - Restart service"
         echo "  start     - Start service"
         echo "  stop      - Stop service"
@@ -1893,6 +2027,21 @@ CERT_KEY=${CERT_KEY:-}
 SNI=${SNI_DEFAULT:-www.microsoft.com}
 EOF
   chmod 600 /etc/sing-box/client-info.txt
+  
+  # Generate QR codes for easy import
+  local cert_available="false"
+  [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" ]] && cert_available="true"
+  
+  generate_all_qr_codes \
+    "${DOMAIN:-}" \
+    "${REALITY_PORT_CHOSEN:-$REALITY_PORT}" \
+    "${WS_PORT_CHOSEN:-$WS_PORT}" \
+    "${HY2_PORT_CHOSEN:-$HY2_PORT}" \
+    "${UUID:-}" \
+    "${PUB:-}" \
+    "${SID:-}" \
+    "${HY2_PASS:-}" \
+    "$cert_available"
 }
 
 print_upgrade_summary() {
