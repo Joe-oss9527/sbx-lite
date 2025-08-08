@@ -1316,7 +1316,7 @@ write_config() {
     [[ -n "$WS_PORT_CHOSEN" ]] || die "WebSocket port is not set for certificate configuration."
     [[ -n "$HY2_PORT_CHOSEN" ]] || die "Hysteria2 port is not set for certificate configuration."
     [[ -n "$DOMAIN" ]] || die "Domain is not set for certificate configuration."
-    [[ -n "$HY2_PASSWORD" ]] || die "Hysteria2 password is not set for certificate configuration."
+    [[ -n "$HY2_PASS" ]] || die "Hysteria2 password is not set for certificate configuration."
     
     # Add WS-TLS inbound
     local ws_config hy2_config
@@ -1418,7 +1418,7 @@ write_config() {
       "connect_timeout": "5s",
       "tcp_fast_open": false,
       "udp_fragment": true,
-      "domain_strategy": "ipv4_only"
+      "inet4_bind_address": "0.0.0.0"
     }' 2>/dev/null); then
       warn "Failed to add IPv4-only optimization, continuing with default configuration"
     else
