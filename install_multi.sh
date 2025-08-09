@@ -350,15 +350,13 @@ detect_ipv6_support() {
   echo "$ipv6_supported"
 }
 
-# Choose optimal listen address based on network stack support
+# Choose optimal listen address based on sing-box 1.12.0 best practices
 choose_listen_address() {
   local ipv6_supported="$1"
   
-  if [[ "$ipv6_supported" == "true" ]]; then
-    echo "::"  # Dual-stack mode: supports both IPv4 and IPv6
-  else
-    echo "0.0.0.0"  # IPv4-only mode
-  fi
+  # Always use :: for dual-stack support as per sing-box 1.12.0 standards
+  # DNS strategy handles IPv4-only resolution when needed
+  echo "::"
 }
 
 # Validate Reality destination connectivity
@@ -1292,9 +1290,9 @@ write_config() {
   listen_addr=$(choose_listen_address "$ipv6_supported")
   
   if [[ "$ipv6_supported" == "true" ]]; then
-    success "  ✓ IPv6 support detected - using dual-stack configuration ($listen_addr)"
+    success "  ✓ IPv6 support detected - using dual-stack listen with default DNS strategy"
   else
-    warn "  ⚠ IPv6 not available - using IPv4-only configuration ($listen_addr)"
+    warn "  ⚠ IPv6 not available - using dual-stack listen with IPv4-only DNS strategy"
   fi
   
   # Validate Reality destination connectivity
@@ -1363,17 +1361,36 @@ write_config() {
   # Create base configuration using jq for robust JSON generation
   local base_config reality_config
   
-  if ! base_config=$(jq -n \
-    --arg log_level "$LOG_LEVEL" \
-    '{
-      log: { level: $log_level, timestamp: true },
-      inbounds: [],
-      outbounds: [
-        { type: "direct", tag: "direct" },
-        { type: "block", tag: "block" }
-      ]
-    }' 2>/dev/null); then
-    die "Failed to create base configuration with jq"
+  # Create base configuration with proper DNS strategy for IPv4-only networks
+  if [[ "$ipv6_supported" == "false" ]]; then
+    msg "  - Applying IPv4-only DNS strategy for network compatibility"
+    if ! base_config=$(jq -n \
+      --arg log_level "$LOG_LEVEL" \
+      '{
+        log: { level: $log_level, timestamp: true },
+        dns: { strategy: "ipv4_only" },
+        inbounds: [],
+        outbounds: [
+          { type: "direct", tag: "direct" },
+          { type: "block", tag: "block" }
+        ]
+      }' 2>/dev/null); then
+      die "Failed to create base configuration with jq"
+    fi
+  else
+    msg "  - Using default DNS strategy for dual-stack network"
+    if ! base_config=$(jq -n \
+      --arg log_level "$LOG_LEVEL" \
+      '{
+        log: { level: $log_level, timestamp: true },
+        inbounds: [],
+        outbounds: [
+          { type: "direct", tag: "direct" },
+          { type: "block", tag: "block" }
+        ]
+      }' 2>/dev/null); then
+      die "Failed to create base configuration with jq"
+    fi
   fi
   
   # Add Reality inbound (always present)
@@ -1522,24 +1539,19 @@ write_config() {
     die "Failed to add route configuration"
   fi
   
-  # Optimize outbound configuration based on network stack
-  if [[ "$ipv6_supported" == "false" ]]; then
-    msg "  - Optimizing outbound for IPv4-only network"
-    if ! base_config=$(echo "$base_config" | jq '.outbounds[0] += {
-      "bind_interface": "",
-      "routing_mark": 0,
-      "reuse_addr": false,
-      "connect_timeout": "5s",
-      "tcp_fast_open": false,
-      "udp_fragment": true,
-      "inet4_bind_address": "0.0.0.0"
-    }' 2>/dev/null); then
-      warn "Failed to add IPv4-only optimization, continuing with default configuration"
-    else
-      success "  ✓ IPv4-only network optimization applied"
-    fi
+  # Add standard outbound configuration parameters
+  msg "  - Configuring outbound connection parameters"
+  if ! base_config=$(echo "$base_config" | jq '.outbounds[0] += {
+    "bind_interface": "",
+    "routing_mark": 0,
+    "reuse_addr": false,
+    "connect_timeout": "5s",
+    "tcp_fast_open": false,
+    "udp_fragment": true
+  }' 2>/dev/null); then
+    warn "Failed to add outbound parameters, continuing with default configuration"
   else
-    msg "  - Using default outbound configuration for dual-stack network"
+    success "  ✓ Outbound configuration applied"
   fi
   
   # Write configuration to temporary file

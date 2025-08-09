@@ -9,6 +9,25 @@ This is **sbx-lite**, a one-click bash deployment script for official sing-box p
 ## Development Commands
 
 ### Testing Script Changes
+
+#### 🚨 MANDATORY Validation Steps (Execute After EVERY Configuration Change)
+```bash
+# 1. Validate configuration syntax (MUST show no warnings/errors)
+/usr/local/bin/sing-box check -c /etc/sing-box/config.json
+
+# 2. Verify configuration content (check key sections)
+cat /etc/sing-box/config.json | head -30
+
+# 3. Check service status and restart if needed
+systemctl status sing-box
+# If service is running, restart to apply changes:
+systemctl restart sing-box && sleep 3 && systemctl status sing-box
+
+# 4. Monitor logs for errors (run for 10-15 seconds)
+journalctl -u sing-box -f
+```
+
+#### Full Integration Testing
 ```bash
 # Test basic Reality-only installation (auto-detect IP)
 bash install_multi.sh
@@ -25,8 +44,9 @@ DOMAIN=test.domain.com CERT_MODE=cf_dns CF_Token='token' bash install_multi.sh
 # Test uninstall functionality
 FORCE=1 bash install_multi.sh uninstall
 
-# Validate configuration syntax
-/usr/local/bin/sing-box check -c /etc/sing-box/config.json
+# Test reconfiguration (preserves binary)
+bash install_multi.sh
+# Choose option 3) Reconfigure
 ```
 
 ### Management Commands (Post-Installation)
@@ -138,16 +158,20 @@ sudo sbx uninstall
 - Validate generated short_id immediately after creation with die() on failure
 - Always use `openssl rand -hex 4` for 8-character short_ids (not -hex 8)
 - **ATOMIC CONFIG WRITES**: Use secure temporary files (`mktemp`) and validation before applying
+- **🚨 MANDATORY POST-GENERATION VALIDATION**: After every config change, MUST run complete validation (see Development Commands section)
 - **Enhanced Certificate Validation**: Expiry checks, key compatibility with proper modulus comparison
 - **Secure IP Detection**: Multi-service redundancy with `timeout` protection and enhanced validation
+- **sing-box 1.12.0 DNS Strategy**: Use global `dns.strategy` configuration instead of deprecated `domain_strategy` in outbounds
 
-### sing-box 1.12.0 Compliance Rules
+### sing-box 1.12.0 Compliance Rules (⚠️ CRITICAL FOR IPv6 ISSUE PREVENTION)
 - **NEVER use deprecated inbound fields**: `sniff`, `sniff_override_destination`, `domain_strategy`
+- **🚨 NEVER use deprecated outbound fields**: `domain_strategy` (use global `dns.strategy` instead) - **THIS CAUSES IPv6 CONNECTION FAILURES**
 - **ALWAYS include route configuration**: Required for sniffing and DNS handling
 - **Dynamic route rules**: Adapt inbound list based on enabled protocols (Reality-only vs full mode)
-- **IPv6 dual-stack**: Use `listen: "::"` instead of `listen: "0.0.0.0"`
+- **🚨 IPv6 dual-stack**: Always use `listen: "::"` for dual-stack support (sing-box 1.12.0 standard) - **NEVER use "0.0.0.0"**
 - **Security parameters**: Include `max_time_difference: "1m"` in REALITY configuration
 - **Optimized logging**: Default to `warn` level with timestamps enabled
+- **🚨 DNS Strategy Configuration**: Use `dns.strategy: "ipv4_only"` for IPv4-only networks instead of deprecated outbound options - **CRITICAL FOR PREVENTING IPv6 ERRORS**
 
 ### Service Management Best Practices  
 - Fresh install: Stop service → Wait 10s for shutdown → Check ports → Continue
@@ -259,24 +283,23 @@ This ensures you always have access to the most up-to-date official documentatio
 - Generated URIs include aliases: `#Reality-domain`, `#WS-TLS-domain`, `#Hysteria2-domain`
 - Short IDs are 8 characters (sing-box limit), not 16 characters (Xray limit)
 
-## sing-box 1.12.0 Configuration Updates (2025-08)
+## sing-box 1.12.0 Configuration Standards
 
-### Configuration Modernization
-- **Deprecated Field Removal**: Removed `sniff`, `sniff_override_destination`, `domain_strategy` from inbound configuration (deprecated in 1.12.0)
-- **Route Rules Migration**: Migrated sniffing functionality from inbound to route rules using `action: "sniff"`
-- **DNS Hijacking**: Added `action: "hijack-dns"` route rule for DNS traffic handling
+### Current Implementation (Fully Compliant)
+- **Modern Route Rules**: Using `action: "sniff"` and `action: "hijack-dns"` for traffic handling
+- **Global DNS Strategy**: Using `dns.strategy: "ipv4_only"` for IPv4-only networks instead of deprecated outbound options
+- **Dual-Stack Listen**: Always using `listen: "::"` for optimal network support
 - **Auto Interface Detection**: Enabled `auto_detect_interface: true` to prevent routing loops
 
-### Performance & Security Enhancements
-- **Log Level Optimization**: Changed default from `info` to `warn` to reduce log volume
-- **IPv6 Support**: Updated listen address from `0.0.0.0` to `::` for dual-stack support
-- **Timestamp Logging**: Added `timestamp: true` for better log correlation
-- **Anti-Replay Protection**: Added `max_time_difference: "1m"` to REALITY configuration
+### Performance & Security Features
+- **Log Level Optimization**: Default `warn` level with timestamps enabled
+- **Anti-Replay Protection**: `max_time_difference: "1m"` in REALITY configuration
 
 ### Configuration Structure (1.12.0)
 ```json
 {
   "log": { "level": "warn", "timestamp": true },
+  "dns": { "strategy": "ipv4_only" },  // IPv4-only networks
   "inbounds": [
     {
       "type": "vless",
@@ -289,6 +312,10 @@ This ensures you always have access to the most up-to-date official documentatio
         }
       }
     }
+  ],
+  "outbounds": [
+    { "type": "direct", "tag": "direct" },
+    { "type": "block", "tag": "block" }
   ],
   "route": {
     "rules": [
@@ -307,6 +334,7 @@ This ensures you always have access to the most up-to-date official documentatio
 - **JSON Generation Overhaul**: Replaced string concatenation with `jq` for robust JSON generation
 - **Enhanced Error Handling**: Added `trap`-based cleanup and comprehensive network retry logic
 - **Input Validation Strengthening**: Added sanitization functions and comprehensive validation
+- **🚨 IPv6 Configuration Modernization**: Implemented sing-box 1.12.0 compliant DNS strategy configuration
 
 ### Security Hardening (Latest)
 - **Command Injection Prevention**: Fixed unsafe shell globbing in cleanup functions
@@ -327,6 +355,7 @@ This ensures you always have access to the most up-to-date official documentatio
 - **Port Checking Logic Error**: Fixed setup_service() checking for Hysteria2 ports even in Reality-only mode
 - **Management Script Local Variables**: Fixed incorrect use of 'local' keyword outside functions in sbx uninstall command
 - **Undefined Variable Errors**: Fixed script failures due to unset variables in post-installation steps with proper ${VAR:-} syntax
+- **🚨 IPv6 Connection Fix (CRITICAL)**: Fixed "network unreachable" errors by implementing proper DNS strategy configuration
 
 ### User Experience Improvements
 - **Simplified Installation**: `bash install_multi.sh` now works without any parameters
@@ -339,6 +368,94 @@ This ensures you always have access to the most up-to-date official documentatio
 - **Comprehensive Error Handling**: Consistent error checking patterns throughout the script
 - **Atomic Operations**: Enhanced file operations with proper rollback on failures
 - **Input Sanitization**: Robust protection against shell injection attacks
+
+## IPv6 Configuration Issue Resolution (Critical - 2025-08-09)
+
+### ⚠️ CRITICAL ISSUE: IPv6 "network unreachable" Errors
+
+**Problem**: Clients experiencing connection failures with error messages:
+```
+ERROR [...] connection: open connection to api.anthropic.com:443 using outbound/direct[direct]: dial tcp [IPv6]:443: connect: network unreachable
+ERROR [...] inbound/vless[in-reality]: process connection from IP:port: TLS handshake: REALITY: failed to dial dest: (dial tcp [IPv6]:443: connect: network unreachable)
+```
+
+**Root Cause**: Configuration regression where deprecated `domain_strategy: "prefer_ipv4"` in outbounds was incorrectly replaced with non-functional `inet4_bind_address` configuration, causing IPv6 connection attempts on IPv4-only servers.
+
+**⚡ CRITICAL SOLUTION**: Must use sing-box 1.12.0 compliant configuration:
+
+#### ✅ CORRECT Configuration Pattern:
+```json
+{
+  "dns": { "strategy": "ipv4_only" },  // Global DNS strategy for IPv4-only networks
+  "inbounds": [
+    {
+      "listen": "::",  // Always use dual-stack listen (sing-box 1.12.0 standard)
+      ...
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      // NO domain_strategy field - this is deprecated!
+      // DNS strategy is handled globally in dns section
+      ...
+    }
+  ]
+}
+```
+
+#### ❌ INCORRECT Configuration Patterns:
+```json
+{
+  // WRONG: Missing global DNS strategy for IPv4-only networks
+  "inbounds": [
+    {
+      "listen": "0.0.0.0",  // WRONG: Use :: instead for dual-stack
+      ...
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "domain_strategy": "prefer_ipv4",  // DEPRECATED: Will be removed in 1.14.0
+      // or
+      "inet4_bind_address": "0.0.0.0"  // INEFFECTIVE: Doesn't control DNS resolution
+      ...
+    }
+  ]
+}
+```
+
+**🔧 Fix Implementation Location**: `write_config()` function in `install_multi.sh`
+
+**🚨 Key Implementation Rules**:
+1. **ALWAYS** use global `dns.strategy: "ipv4_only"` for IPv4-only networks
+2. **ALWAYS** use `listen: "::"` for dual-stack support (sing-box 1.12.0 standard)
+3. **NEVER** use deprecated `domain_strategy` in outbounds
+4. **NEVER** use `inet4_bind_address` as DNS strategy replacement
+
+**🚨 MANDATORY Verification Steps (Run After Every Change)**:
+```bash
+# 1. Must show NO deprecation warnings or errors
+/usr/local/bin/sing-box check -c /etc/sing-box/config.json
+
+# 2. Verify configuration structure
+cat /etc/sing-box/config.json | head -30
+
+# 3. Should see IPv4-only DNS strategy (for IPv4-only networks)
+grep -A 3 '"dns"' /etc/sing-box/config.json
+
+# 4. Should see dual-stack listen (always ::, never 0.0.0.0)
+grep '"listen"' /etc/sing-box/config.json
+
+# 5. Restart service and verify status
+systemctl restart sing-box && sleep 3 && systemctl status sing-box
+
+# 6. Monitor logs for connection errors (run 10-15 seconds)
+journalctl -u sing-box -f
+```
+
+**⚠️ FAILURE TO RUN THESE STEPS MAY RESULT IN IPv6 CONNECTION FAILURES**
 
 ## Troubleshooting & Debugging
 
