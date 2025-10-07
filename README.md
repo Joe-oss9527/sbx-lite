@@ -1,164 +1,93 @@
-# sbx-lite - 官方 sing-box 一键部署
+# sbx-lite
 
-```
-███████╗██████╗ ██╗  ██╗    ██╗     ██╗████████╗███████╗
-██╔════╝██╔══██╗╚██╗██╔╝    ██║     ██║╚══██╔══╝██╔════╝
-███████╗██████╔╝ ╚███╔╝ ███╗██║     ██║   ██║   █████╗  
-╚════██║██╔══██╗ ██╔██╗ ╚══╝██║     ██║   ██║   ██╔══╝  
-███████║██████╔╝██╔╝ ██╗    ███████╗██║   ██║   ███████╗
-╚══════╝╚═════╝ ╚═╝  ╚═╝    ╚══════╝╚═╝   ╚═╝   ╚══════╝
+Official sing-box one-click deployment script with VLESS-REALITY, VLESS-WS-TLS, and Hysteria2 support.
 
-    🚀 Sing-Box Official One-Click Deployment Script
-    📦 Multi-Protocol: REALITY + WS-TLS + Hysteria2
-    ⚡ Version: Latest | Author: YYvanYang
-================================================================
-```
+## Features
 
-**一键部署官方 sing-box**，默认启用 **VLESS-REALITY**（无证书、抗探测），可选启用 **VLESS-WS-TLS** 和 **Hysteria2**。安装完成自动打印客户端 URI。
+- **Zero-config Reality deployment** - Auto IP detection, no domain required
+- **Multi-protocol support** - REALITY (default), WS-TLS, Hysteria2 (optional)
+- **sing-box 1.12.0+ compliant** - Modern DNS configuration, IPv6 dual-stack
+- **QR code generation** - Easy client import via terminal display
+- **Performance optimized** - TCP Fast Open enabled, 5-10% latency reduction
 
-> **🔄 最新更新**：已完全兼容 sing-box 1.12.0，采用现代化配置结构，性能和安全性全面升级  
-> **Cloudflare 用户注意**：Reality/Hy2 需灰云，WS-TLS 可灰云/橙云
+## Quick Start
 
----
-
-## 🚀 快速开始
-
-**最简安装（推荐）- 仅 Reality，自动检测 IP**
+**Reality only (recommended)**
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh)
 ```
-> 🎯 **无需域名！** 脚本会自动检测服务器公网 IP，适合快速部署 Reality 协议
 
-**Reality + 指定 IP 或域名**
-```bash
-# 使用 IP 地址
-DOMAIN=1.2.3.4 bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh)
-
-# 使用域名
-DOMAIN=your.domain.com bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh)
-```
-
-**完整安装 - Reality + WS-TLS + Hysteria2**
+**Reality + WS-TLS + Hysteria2 (requires domain and certificate)**
 ```bash
 DOMAIN=your.domain.com \
 CERT_MODE=cf_dns \
 CF_Token='your_cloudflare_token' \
 bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh)
 ```
-> ⚠️ **注意**：WS-TLS 和 Hysteria2 需要真实域名和证书，不支持 IP 地址
 
----
-
-## 🔧 安装选项
-
-**使用现有证书**
+**Additional options**
 ```bash
-DOMAIN=your.domain.com \
-CERT_FULLCHAIN=/path/to/fullchain.pem \
-CERT_KEY=/path/to/privkey.pem \
-bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh)
+# Specify IP or domain
+DOMAIN=1.2.3.4 bash <(curl -fsSL ...)
+
+# Use existing certificates
+DOMAIN=your.domain.com CERT_FULLCHAIN=/path/to/fullchain.pem CERT_KEY=/path/to/privkey.pem bash <(curl -fsSL ...)
+
+# HTTP-01 ACME (requires port 80)
+DOMAIN=your.domain.com CERT_MODE=le_http bash <(curl -fsSL ...)
 ```
 
-**HTTP-01 自动证书（需开放 80 端口）**
-```bash
-DOMAIN=your.domain.com \
-CERT_MODE=le_http \
-bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh)
-```
-
----
-
-## 🗑️ 卸载
-
-**便捷卸载（推荐）**
-```bash
-sudo sbx uninstall
-```
-
-**传统卸载方式**
-```bash
-FORCE=1 bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh) uninstall
-```
-
----
-
-## 📋 管理命令
-
-安装后会自动创建管理命令 `sbx`（全称 `sbx-manager`）：
+## Management Commands
 
 ```bash
-# 查看配置信息（包含所有 URI）
-sbx info
-
-# 检查服务状态
-sbx status
-
-# 重启服务
-sbx restart
-
-# 查看实时日志
-sbx log
-
-# 验证配置
-sbx check
-
-# 启动/停止服务
-sbx start
-sbx stop
-
-# 完全卸载（需要 root 权限）
-sudo sbx uninstall
+sbx info          # Show configuration and URIs
+sbx qr            # Display QR codes for client import
+sbx status        # Check service status
+sbx restart       # Restart service
+sbx log           # View live logs
+sbx check         # Validate configuration
+sbx start|stop    # Control service
+sbx uninstall     # Complete removal (requires root)
 ```
 
-**传统 systemctl 命令仍然可用**：
-```bash
-systemctl status sing-box
-systemctl restart sing-box
-journalctl -u sing-box -f
-```
+**Configuration**: `/etc/sing-box/config.json`
+**Default ports**: 443 (Reality), 8444 (WS-TLS), 8443 (Hysteria2)
 
-**配置文件位置**：`/etc/sing-box/config.json`  
-**默认端口**：443(Reality), 8444(WS-TLS), 8443(Hy2)
+## Client Compatibility
 
----
+- **NekoRay/NekoBox** (recommended, native sing-box support)
+- **v2rayN** (requires switching core to sing-box: Settings → Core → VLESS → sing-box)
+- **Shadowrocket** (iOS)
+- **sing-box official clients**
 
-## ❓ 故障排查
+## Troubleshooting
 
-**Reality 连不通**
-- 如果使用域名：确认域名是灰云（DNS only）
-- 如果使用 IP：确认防火墙允许 443 端口
-- 检查 443 端口是否被占用
-- 确认系统时间正确
-- **v2rayN 用户**：需要在设置中将 VLESS 内核切换为 sing-box（默认是 Xray）
+**Reality connection issues**
+- Domain users: Verify DNS-only mode (Cloudflare gray cloud)
+- IP users: Check firewall allows port 443
+- v2rayN users: Switch VLESS core from Xray to sing-box
 
-**Hysteria2 不工作**
-- 确认有证书且 UDP 端口开放
-- 检查防火墙设置
+**Hysteria2 not working**
+- Verify certificate exists and UDP port is open
 
-**重新配置**
-- 直接重新运行安装命令即可覆盖
+**Reconfiguration**
+- Re-run installation command to overwrite existing setup
 
-## 🔨 客户端兼容性
+## Technical Details
 
-**sing-box 服务端兼容的客户端**：
-- **NekoRay/NekoBox**（推荐，原生支持 sing-box）
-- **v2rayN**（需切换内核：设置 → Core 类型设置 → VLESS → 选择 sing-box）
-- **Shadowrocket**（iOS）
-- **sing-box 官方客户端**
+**sing-box 1.12.0+ compliance**
+- Explicit DNS configuration with `type: "local"` format
+- Global `dns.strategy` instead of deprecated per-outbound settings
+- IPv6 dual-stack listen (`::`), IPv4-only DNS strategy for compatible networks
+- Modern route rules with `action: "sniff"` and `action: "hijack-dns"`
+- TCP Fast Open enabled for reduced connection latency
 
-**注意**：v2rayN 默认使用 Xray 内核，需要手动切换到 sing-box 内核才能连接本脚本部署的 Reality 服务。
+**Security enhancements**
+- Anti-replay protection via `max_time_difference` in REALITY config
+- Input validation and sanitization against command injection
+- Secure temporary file handling (600/700 permissions)
+- Enhanced IP validation with reserved address filtering
 
----
+## License
 
-## ✨ 1.12.0 新特性
-
-- 🎯 移除过时配置，使用最新路由规则
-- 📡 IPv6 双栈支持，向未来兼容
-- 🛡️ 增强安全防护（防重放攻击）
-- 📊 优化日志配置，减少资源占用
-
----
-
-## 📄 许可证
-
-MIT License - 基于官方 sing-box
+MIT License - Based on official sing-box

@@ -158,7 +158,8 @@ validate_ip_address() {
   
   # Check each octet is in valid range (0-255)
   local IFS='.'
-  local -a octets=($ip)
+  local -a octets
+  read -ra octets <<< "$ip"
   for octet in "${octets[@]}"; do
     # Remove leading zeros and check range
     octet=$((10#$octet))
@@ -208,7 +209,8 @@ generate_uuid() {
   # Method 4: OpenSSL with proper UUID v4 format
   # UUID v4 format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
   # where y is one of [8, 9, a, b]
-  local hex=$(openssl rand -hex 16)
+  local hex
+  hex=$(openssl rand -hex 16) || return 1
   printf '%s-%s-4%s-%x%s-%s' \
     "${hex:0:8}" \
     "${hex:8:4}" \
@@ -768,7 +770,8 @@ check_existing_installation() {
           fi
           # Backup existing config
           if [[ -f "$SB_CONF" ]]; then
-            local backup_file="${SB_CONF}.backup.$(date +%Y%m%d_%H%M%S)"
+            local backup_file
+            backup_file="${SB_CONF}.backup.$(date +%Y%m%d_%H%M%S)"
             msg "Backing up existing config to: $backup_file"
             cp "$SB_CONF" "$backup_file"
           fi
@@ -2111,9 +2114,11 @@ EOF
 }
 
 print_upgrade_summary() {
-  local current_version="$(get_installed_version)"
-  local service_status="$(check_service_status)"
-  
+  local current_version
+  local service_status
+  current_version="$(get_installed_version)"
+  service_status="$(check_service_status)"
+
   echo
   echo -e "${B}=== sing-box Binary Upgraded ===${N}"
   echo "Version   : ${current_version}"
