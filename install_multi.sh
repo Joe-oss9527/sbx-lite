@@ -1361,14 +1361,22 @@ write_config() {
   # Create base configuration using jq for robust JSON generation
   local base_config reality_config
   
-  # Create base configuration with proper DNS strategy for IPv4-only networks
+  # Create base configuration with proper DNS configuration for network stack
   if [[ "$ipv6_supported" == "false" ]]; then
-    msg "  - Applying IPv4-only DNS strategy for network compatibility"
+    msg "  - Applying IPv4-only DNS configuration for network compatibility"
     if ! base_config=$(jq -n \
       --arg log_level "$LOG_LEVEL" \
       '{
         log: { level: $log_level, timestamp: true },
-        dns: { strategy: "ipv4_only" },
+        dns: {
+          servers: [
+            {
+              type: "local",
+              tag: "dns-local"
+            }
+          ],
+          strategy: "ipv4_only"
+        },
         inbounds: [],
         outbounds: [
           { type: "direct", tag: "direct" },
@@ -1378,11 +1386,19 @@ write_config() {
       die "Failed to create base configuration with jq"
     fi
   else
-    msg "  - Using default DNS strategy for dual-stack network"
+    msg "  - Using default DNS configuration for dual-stack network"
     if ! base_config=$(jq -n \
       --arg log_level "$LOG_LEVEL" \
       '{
         log: { level: $log_level, timestamp: true },
+        dns: {
+          servers: [
+            {
+              type: "local",
+              tag: "dns-local"
+            }
+          ]
+        },
         inbounds: [],
         outbounds: [
           { type: "direct", tag: "direct" },
@@ -1534,7 +1550,10 @@ write_config() {
         "action": "hijack-dns"
       }
     ],
-    "auto_detect_interface": true
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "dns-local"
+    }
   }' 2>/dev/null); then
     die "Failed to add route configuration"
   fi
@@ -1546,7 +1565,7 @@ write_config() {
     "routing_mark": 0,
     "reuse_addr": false,
     "connect_timeout": "5s",
-    "tcp_fast_open": false,
+    "tcp_fast_open": true,
     "udp_fragment": true
   }' 2>/dev/null); then
     warn "Failed to add outbound parameters, continuing with default configuration"

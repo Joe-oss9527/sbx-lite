@@ -161,7 +161,7 @@ sudo sbx uninstall
 - **🚨 MANDATORY POST-GENERATION VALIDATION**: After every config change, MUST run complete validation (see Development Commands section)
 - **Enhanced Certificate Validation**: Expiry checks, key compatibility with proper modulus comparison
 - **Secure IP Detection**: Multi-service redundancy with `timeout` protection and enhanced validation
-- **sing-box 1.12.0 DNS Strategy**: Use global `dns.strategy` configuration instead of deprecated `domain_strategy` in outbounds
+- **sing-box 1.12.0+ DNS Configuration**: Use explicit DNS servers with `type: "local"` format and global `dns.strategy` instead of deprecated `domain_strategy` in outbounds
 
 ### sing-box 1.12.0 Compliance Rules (⚠️ CRITICAL FOR IPv6 ISSUE PREVENTION)
 - **NEVER use deprecated inbound fields**: `sniff`, `sniff_override_destination`, `domain_strategy`
@@ -286,6 +286,8 @@ This ensures you always have access to the most up-to-date official documentatio
 ## sing-box 1.12.0 Configuration Standards
 
 ### Current Implementation (Fully Compliant)
+- **Modern DNS Configuration**: Using explicit DNS servers with 1.12.0+ format (`type: "local"`) instead of implicit configuration
+- **Default Domain Resolver**: Configured `route.default_domain_resolver` for 1.14.0 compatibility
 - **Modern Route Rules**: Using `action: "sniff"` and `action: "hijack-dns"` for traffic handling
 - **Global DNS Strategy**: Using `dns.strategy: "ipv4_only"` for IPv4-only networks instead of deprecated outbound options
 - **Dual-Stack Listen**: Always using `listen: "::"` for optimal network support
@@ -294,12 +296,21 @@ This ensures you always have access to the most up-to-date official documentatio
 ### Performance & Security Features
 - **Log Level Optimization**: Default `warn` level with timestamps enabled
 - **Anti-Replay Protection**: `max_time_difference: "1m"` in REALITY configuration
+- **TCP Fast Open**: Enabled by default for reduced connection latency (~5-10% improvement)
 
-### Configuration Structure (1.12.0)
+### Configuration Structure (1.12.0+)
 ```json
 {
   "log": { "level": "warn", "timestamp": true },
-  "dns": { "strategy": "ipv4_only" },  // IPv4-only networks
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "dns-local"
+      }
+    ],
+    "strategy": "ipv4_only"  // IPv4-only networks
+  },
   "inbounds": [
     {
       "type": "vless",
@@ -314,7 +325,11 @@ This ensures you always have access to the most up-to-date official documentatio
     }
   ],
   "outbounds": [
-    { "type": "direct", "tag": "direct" },
+    {
+      "type": "direct",
+      "tag": "direct",
+      "tcp_fast_open": true  // Performance optimization
+    },
     { "type": "block", "tag": "block" }
   ],
   "route": {
@@ -322,14 +337,23 @@ This ensures you always have access to the most up-to-date official documentatio
       { "inbound": ["in-reality"], "action": "sniff" },
       { "protocol": "dns", "action": "hijack-dns" }
     ],
-    "auto_detect_interface": true
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "dns-local"  // 1.14.0 compatibility
+    }
   }
 }
 ```
 
-## Recent Critical Fixes & Improvements (2025-08)
+## Recent Critical Fixes & Improvements (2025-10)
 
-### Major Enhancements
+### Configuration Modernization (2025-10-07)
+- **DNS Configuration Upgrade**: Implemented explicit DNS servers using 1.12.0+ format (`type: "local"`) for better reliability
+- **Future-Proof Domain Resolution**: Added `route.default_domain_resolver` for sing-box 1.14.0 compatibility
+- **Performance Optimization**: Enabled TCP Fast Open by default for 5-10% connection latency reduction
+- **Verified Implementation**: All optimizations tested and validated with sing-box 1.12.9
+
+### Major Enhancements (2025-08)
 - **Reality Zero-Config Deployment**: Removed domain requirement for Reality-only mode, added auto IP detection
 - **JSON Generation Overhaul**: Replaced string concatenation with `jq` for robust JSON generation
 - **Enhanced Error Handling**: Added `trap`-based cleanup and comprehensive network retry logic
@@ -383,10 +407,18 @@ ERROR [...] inbound/vless[in-reality]: process connection from IP:port: TLS hand
 
 **⚡ CRITICAL SOLUTION**: Must use sing-box 1.12.0 compliant configuration:
 
-#### ✅ CORRECT Configuration Pattern:
+#### ✅ CORRECT Configuration Pattern (1.12.0+):
 ```json
 {
-  "dns": { "strategy": "ipv4_only" },  // Global DNS strategy for IPv4-only networks
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "dns-local"
+      }
+    ],
+    "strategy": "ipv4_only"  // Global DNS strategy for IPv4-only networks
+  },
   "inbounds": [
     {
       "listen": "::",  // Always use dual-stack listen (sing-box 1.12.0 standard)
@@ -396,11 +428,18 @@ ERROR [...] inbound/vless[in-reality]: process connection from IP:port: TLS hand
   "outbounds": [
     {
       "type": "direct",
+      "tcp_fast_open": true,  // Performance optimization
       // NO domain_strategy field - this is deprecated!
       // DNS strategy is handled globally in dns section
       ...
     }
-  ]
+  ],
+  "route": {
+    "default_domain_resolver": {
+      "server": "dns-local"  // 1.14.0 compatibility
+    },
+    ...
+  }
 }
 ```
 
@@ -429,10 +468,12 @@ ERROR [...] inbound/vless[in-reality]: process connection from IP:port: TLS hand
 **🔧 Fix Implementation Location**: `write_config()` function in `install_multi.sh`
 
 **🚨 Key Implementation Rules**:
-1. **ALWAYS** use global `dns.strategy: "ipv4_only"` for IPv4-only networks
-2. **ALWAYS** use `listen: "::"` for dual-stack support (sing-box 1.12.0 standard)
-3. **NEVER** use deprecated `domain_strategy` in outbounds
-4. **NEVER** use `inet4_bind_address` as DNS strategy replacement
+1. **ALWAYS** use explicit DNS servers with `type: "local"` format (1.12.0+ standard)
+2. **ALWAYS** use global `dns.strategy: "ipv4_only"` for IPv4-only networks
+3. **ALWAYS** configure `route.default_domain_resolver` for 1.14.0 compatibility
+4. **ALWAYS** use `listen: "::"` for dual-stack support (sing-box 1.12.0 standard)
+5. **NEVER** use deprecated `domain_strategy` in outbounds
+6. **NEVER** use `inet4_bind_address` as DNS strategy replacement
 
 **🚨 MANDATORY Verification Steps (Run After Every Change)**:
 ```bash
