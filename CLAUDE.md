@@ -4,7 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is **sbx-lite**, a one-click bash deployment script for official sing-box proxy server. The project consists of a single comprehensive script (`install_multi.sh`) that supports three protocols: VLESS-REALITY (default), VLESS-WS-TLS (optional), and Hysteria2 (optional).
+This is **sbx-lite**, a one-click bash deployment script for official sing-box proxy server. The project features a **modular architecture (v2.0)** with 9 specialized library modules and a streamlined main installer (`install_multi.sh`) that supports three protocols: VLESS-REALITY (default), VLESS-WS-TLS (optional), and Hysteria2 (optional).
+
+### Architecture Highlights
+- **Modular Design**: 9 focused library modules (3,153 lines) in `lib/` directory
+- **Streamlined Installer**: Main script reduced from 2,294 to ~500 lines
+- **Enhanced Features**: Backup/restore, multi-client export, CI/CD integration
+- **Production-Grade**: ShellCheck validation, automated testing, comprehensive error handling
 
 ## Development Commands
 
@@ -38,8 +44,8 @@ DOMAIN=1.2.3.4 bash install_multi.sh
 # Test Reality with domain
 DOMAIN=test.domain.com bash install_multi.sh
 
-# Test full installation with certificates  
-DOMAIN=test.domain.com CERT_MODE=cf_dns CF_Token='token' bash install_multi.sh
+# Test full installation with automatic certificates (Caddy)
+DOMAIN=test.domain.com bash install_multi.sh
 
 # Test uninstall functionality
 FORCE=1 bash install_multi.sh uninstall
@@ -68,6 +74,161 @@ sbx check
 
 # Complete uninstall (stops service first, requires root)
 sudo sbx uninstall
+
+# Backup and restore operations
+sbx backup create --encrypt    # Create encrypted backup
+sbx backup list                # List available backups
+sbx backup restore <file>      # Restore from backup
+
+# Export client configurations
+sbx export v2rayn reality      # Export v2rayN JSON config
+sbx export clash               # Export Clash YAML config
+sbx export uri all             # Export all share URIs
+sbx export qr ./qr-codes/      # Generate QR code images
+sbx export subscription        # Generate subscription link
+```
+
+## Modular Architecture (v2.0)
+
+The project follows a clean modular architecture with clear separation of concerns:
+
+### Library Modules (`lib/` directory)
+
+1. **lib/common.sh** (308 lines) - Global utilities and logging
+   - Constants: File paths, default ports, fallback ports
+   - Color definitions and initialization
+   - Logging functions: `msg()`, `warn()`, `err()`, `success()`, `die()`
+   - Core utilities: `generate_uuid()`, `generate_reality_keypair()`, `have()`, `need_root()`
+   - UUID generation with multiple fallback methods
+   - Secure temporary file handling
+
+2. **lib/network.sh** (242 lines) - Network operations
+   - `get_public_ip()` - Multi-service IP detection with timeout protection
+   - `allocate_port()` - Port allocation with retry logic (3 attempts, 2s intervals)
+   - `detect_ipv6_support()` - IPv6 capability detection
+   - `safe_http_get()` - HTTP operations with timeout and retry
+   - `port_in_use()` - Port occupancy checking
+   - Network interface detection
+
+3. **lib/validation.sh** (331 lines) - Input validation and security
+   - `sanitize_input()` - Remove shell metacharacters
+   - `validate_domain()` - Domain format and length validation
+   - `validate_ip_address()` - Enhanced IP validation with octet range checks
+   - `validate_cert_files()` - Certificate file validation
+   - `validate_env_vars()` - Environment variable validation
+   - `validate_menu_choice()`, `validate_yes_no()` - User input validation
+
+4. **lib/certificate.sh** (102 lines) - Caddy-based certificate management
+   - `maybe_issue_cert()` - Automatic certificate issuance via Caddy
+   - `check_cert_expiry()` - Certificate expiration checking
+   - Automatic certificate mode detection for domains
+   - Certificate-key compatibility verification
+   - Integration with Caddy for Let's Encrypt certificates
+
+4.5. **lib/caddy.sh** (429 lines) - Caddy automatic TLS management
+   - `caddy_install()` - Install/upgrade Caddy binary from GitHub
+   - `caddy_setup_auto_tls()` - Configure Caddy for automatic HTTPS
+   - `caddy_setup_cert_sync()` - Sync certificates from Caddy to sing-box
+   - `caddy_wait_for_cert()` - Wait for certificate issuance with timeout
+   - `caddy_create_renewal_hook()` - Automatic certificate renewal hooks
+   - `caddy_uninstall()` - Clean Caddy removal
+   - Non-conflicting port configuration (8445 for HTTPS cert management)
+   - Systemd service integration with automatic startup
+   - Daily certificate sync via systemd timer
+
+5. **lib/config.sh** (330 lines) - sing-box configuration generation
+   - `create_base_config()` - Base configuration with DNS settings
+   - `create_reality_inbound()` - VLESS-REALITY inbound configuration
+   - `create_ws_inbound()` - VLESS-WS-TLS inbound configuration
+   - `create_hysteria2_inbound()` - Hysteria2 inbound configuration
+   - `add_route_config()` - Modern route rules (sing-box 1.12.0+)
+   - `add_outbound_config()` - Outbound configuration with TCP Fast Open
+   - `write_config()` - Complete JSON generation with jq
+   - Atomic configuration writes with validation
+
+6. **lib/service.sh** (230 lines) - systemd service management
+   - `create_service_file()` - Generate systemd unit file
+   - `setup_service()` - Install and start service with validation
+   - `validate_port_listening()` - Port verification with retries
+   - `check_service_status()` - Service status checking
+   - `restart_service()`, `stop_service()`, `reload_service()` - Service control
+   - `remove_service()` - Clean service uninstallation
+   - `show_service_logs()` - Log viewing utilities
+
+7. **lib/ui.sh** (310 lines) - User interface and interaction
+   - `show_logo()`, `show_sbx_logo()` - ASCII art banners
+   - `show_existing_installation_menu()` - Interactive upgrade menu
+   - `prompt_menu_choice()`, `prompt_yes_no()` - User prompts with validation
+   - `prompt_input()`, `prompt_password()` - Secure input handling
+   - `show_spinner()`, `show_progress()` - Progress indicators
+   - `show_config_summary()`, `show_installation_summary()` - Information display
+   - `show_error()` - Error display with context and suggestions
+
+8. **lib/backup.sh** (291 lines) - Backup and restore functionality
+   - `backup_create()` - Create backups with optional AES-256 encryption
+   - `backup_restore()` - Restore from encrypted/unencrypted backups
+   - `backup_list()` - List all available backups with details
+   - `backup_cleanup()` - Auto-cleanup of backups older than 30 days
+   - PBKDF2 key derivation for encryption
+   - Integrity verification on restore
+
+9. **lib/export.sh** (345 lines) - Client configuration export
+   - `export_v2rayn_json()` - v2rayN/v2rayNG JSON format
+   - `export_nekoray_json()` - NekoRay JSON format
+   - `export_clash_yaml()` - Clash/Clash Meta YAML format
+   - `export_uri()` - Share URIs (vless://, hysteria2://)
+   - `export_qr_codes()` - QR code image generation
+   - `export_subscription()` - Base64-encoded subscription links
+   - Multi-protocol support (Reality, WS-TLS, Hysteria2)
+
+### Main Components
+
+- **install_multi.sh** (~500 lines) - Main installer orchestrating all modules
+  - Module loading with error handling
+  - Installation flow coordination
+  - Upgrade and reconfiguration scenarios
+  - Uninstallation flow
+  - Preserved backward compatibility
+
+- **bin/sbx-manager.sh** (357 lines) - Enhanced management tool
+  - Service management commands
+  - Configuration display
+  - Backup operations (create, list, restore, cleanup)
+  - Export operations (v2rayn, clash, uri, qr, subscription)
+  - Module integration with graceful fallback
+
+### CI/CD Infrastructure
+
+- **GitHub Actions** - Automated quality checks
+  - ShellCheck static analysis (`.github/workflows/shellcheck.yml`)
+  - Syntax validation across all scripts
+  - Code style enforcement
+  - Security scanning
+
+- **Makefile** - Local development commands
+  - `make check` - Run all validation
+  - `make lint` - ShellCheck analysis
+  - `make syntax` - Bash syntax validation
+  - `make security` - Security checks
+
+- **.shellcheckrc** - ShellCheck configuration
+  - Enable all checks with selective disables
+  - SC1090 disabled for dynamic module loading
+
+### Module Loading Pattern
+
+```bash
+# All modules use guard variables to prevent re-sourcing
+[[ -n "${_SBX_COMMON_LOADED:-}" ]] && return 0
+readonly _SBX_COMMON_LOADED=1
+
+# Modules explicitly source their dependencies
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/common.sh"
+source "${SCRIPT_DIR}/network.sh"
+
+# Functions are exported for use in other contexts
+export -f msg warn err success die
 ```
 
 ## Reality Protocol & IP Detection
@@ -93,33 +254,84 @@ sudo sbx uninstall
 
 ## Code Architecture & Critical Functions
 
-### Installation Flow
-- `install_flow()` - Main entry point with interactive menu for existing installations
-- `check_existing_installation()` - Detects existing sing-box and presents upgrade/reconfigure options
-- `gen_materials()` - Handles DOMAIN/IP detection, generates Reality keypairs, UUIDs, short_ids (exactly 8 hex chars), passwords
+### Installation Flow (install_multi.sh)
+- `install_flow()` - Main entry point orchestrating all installation steps
+- `check_existing_installation()` - Detects existing installations and presents upgrade menu (uses `lib/ui.sh`)
+- `gen_materials()` - Handles DOMAIN/IP detection, generates Reality keypairs, UUIDs, short_ids, passwords
+- `download_singbox()` - Downloads and installs latest sing-box binary
+- `save_client_info()` - Saves configuration to `/etc/sing-box/client-info.txt`
+- `install_manager_script()` - Installs management tools and library modules
+- `uninstall_flow()` - Complete removal with confirmation
+
+### Security-Critical Functions (lib/validation.sh, lib/common.sh)
+- `sanitize_input()` - Removes dangerous shell metacharacters from user input (lib/validation.sh)
+- `cleanup()` - Secure cleanup function with `trap` integration for temporary file removal (lib/common.sh)
+- `safe_http_get()` - Network operations with timeout and retry protection (lib/network.sh)
+- `validate_cert_files()` - Certificate file validation with proper error handling (lib/validation.sh)
+- `validate_domain()` - Domain format validation with length limits (lib/validation.sh)
+- `validate_ip_address()` - Enhanced IP validation with octet range checks (lib/validation.sh)
+
+### Network Operations (lib/network.sh)
 - `get_public_ip()` - Auto-detects server public IP with timeout protection and validation
-- `validate_ip_address()` - Enhanced IP validation with octet range and reserved address checks
-- `write_config()` - Creates JSON configuration using `jq` with comprehensive error checking
-- `setup_service()` - Creates systemd service and enables it
-- `create_manager_script()` - Installs `/usr/local/bin/sbx-manager` and `/usr/local/bin/sbx` alias
-
-### Security-Critical Functions
-- `sanitize_input()` - Removes dangerous shell metacharacters from user input
-- `cleanup()` - Secure cleanup function with `trap` integration for temporary file removal
-- `safe_http_get()` - Network operations with timeout and retry protection
-- `validate_cert_files()` - Certificate file validation with proper error handling
-
-### Port Management Architecture
 - `allocate_port()` - Implements retry logic (3 attempts, 2-second intervals) for port allocation
-- Primary ports: 443 (Reality), 8444 (WS-TLS), 8443 (Hysteria2)  
+- `detect_ipv6_support()` - IPv6 capability detection and configuration
+- `port_in_use()` - Port occupancy checking
+- Primary ports: 443 (Reality), 8444 (WS-TLS), 8443 (Hysteria2)
 - Fallback ports: 24443, 24444, 24445
-- Fresh install mode stops existing service first to free ports, then waits up to 10 seconds for complete shutdown
 
-### Certificate Integration
-- `maybe_issue_cert()` - Routes to appropriate ACME method based on CERT_MODE
-- `issue_cert_cf_dns()` - Cloudflare DNS-01 via acme.sh integration
-- `issue_cert_http()` - Let's Encrypt HTTP-01 via acme.sh integration  
+### Configuration Generation (lib/config.sh)
+- `write_config()` - Complete sing-box JSON configuration generation using `jq`
+- `create_base_config()` - Base configuration with DNS settings (IPv4-only or dual-stack)
+- `create_reality_inbound()` - VLESS-REALITY inbound with XTLS-RPRX-Vision
+- `create_ws_inbound()` - VLESS-WS-TLS inbound configuration
+- `create_hysteria2_inbound()` - Hysteria2 protocol configuration
+- `add_route_config()` - Modern route rules with `action: "sniff"` (sing-box 1.12.0+)
+- `add_outbound_config()` - Outbound configuration with TCP Fast Open
+- Atomic configuration writes with validation before applying
+
+### Service Management (lib/service.sh)
+- `setup_service()` - Creates systemd service, validates config, starts service
+- `create_service_file()` - Generates systemd unit file with proper dependencies
+- `validate_port_listening()` - Port verification with retries (up to 5 attempts)
+- `check_service_status()` - Service status checking
+- `restart_service()` - Restart with configuration validation
+- `stop_service()` - Graceful shutdown with timeout
+- `remove_service()` - Clean service uninstallation
+
+### Certificate Integration (lib/certificate.sh, lib/caddy.sh)
+- `maybe_issue_cert()` - Automatic certificate issuance when domain is provided
 - Certificate files stored in `/etc/ssl/sbx/<domain>/`
+- Certificate expiry checking and validation support
+- **Caddy Integration** (lib/caddy.sh):
+  - `caddy_install()` - Installs latest Caddy from GitHub releases
+  - `caddy_setup_auto_tls()` - Configures Caddy for automatic HTTPS on port 8445
+  - `caddy_setup_cert_sync()` - Syncs certificates from Caddy to sing-box directory
+  - `caddy_wait_for_cert()` - Waits for Let's Encrypt certificate issuance (60s timeout)
+  - `caddy_create_renewal_hook()` - Daily systemd timer for certificate sync
+  - Caddy runs on dedicated ports to avoid conflicts with sing-box:
+    - Port 80: HTTP (ACME HTTP-01 challenge)
+    - Port 8445: HTTPS (certificate management only)
+    - Port 8080: Fallback handler
+  - sing-box uses standard ports for proxy traffic:
+    - Port 443: VLESS-REALITY
+    - Port 8444: VLESS-WS-TLS
+    - Port 8443: Hysteria2
+
+### User Interface (lib/ui.sh)
+- `show_logo()` - Display application banner
+- `show_existing_installation_menu()` - Interactive upgrade/reconfigure menu
+- `prompt_yes_no()`, `prompt_input()` - User input prompts with validation
+- `show_config_summary()` - Display configuration summary
+- `show_installation_summary()` - Post-installation information
+- `show_error()` - Error display with context and suggestions
+
+### Backup & Export (lib/backup.sh, lib/export.sh)
+- `backup_create()` - Create backups with optional AES-256 encryption (lib/backup.sh)
+- `backup_restore()` - Restore from encrypted/unencrypted backups (lib/backup.sh)
+- `export_v2rayn_json()` - v2rayN/v2rayNG configuration export (lib/export.sh)
+- `export_clash_yaml()` - Clash/Clash Meta configuration export (lib/export.sh)
+- `export_uri()` - Generate share URIs for client import (lib/export.sh)
+- `export_qr_codes()` - Generate QR code images (lib/export.sh)
 
 ## Environment Variables & Configuration
 
@@ -130,13 +342,19 @@ sudo sbx uninstall
   - **Domains enable full mode**: Can add WS-TLS and Hysteria2 with certificates
 
 ### Certificate Configuration
-- `CERT_MODE=cf_dns` + `CF_Token='token'` - Cloudflare DNS-01 challenge
-- `CERT_MODE=le_http` - Let's Encrypt HTTP-01 challenge (requires port 80 open)
+- **Automatic Mode** (default when domain is provided): Uses Caddy for Let's Encrypt HTTP-01 challenge
+- `CERT_MODE=caddy` - Explicitly use Caddy for automatic TLS (default for domain-based installations)
 - `CERT_FULLCHAIN=/path/fullchain.pem` + `CERT_KEY=/path/privkey.pem` - Use existing certificates
+- **Port Requirements**: Port 80 must be open for HTTP-01 ACME challenge verification
 
 ### Port Overrides (Optional)
-- `REALITY_PORT=443` (default), `WS_PORT=8444` (default), `HY2_PORT=8443` (default)
-- Fallback ports (24443, 24444, 24445) used automatically if primary ports occupied
+- **sing-box Ports**:
+  - `REALITY_PORT=443` (default), `WS_PORT=8444` (default), `HY2_PORT=8443` (default)
+  - Fallback ports (24443, 24444, 24445) used automatically if primary ports occupied
+- **Caddy Ports** (for certificate management):
+  - `CADDY_HTTP_PORT=80` (default) - HTTP and ACME HTTP-01 challenge
+  - `CADDY_HTTPS_PORT=8445` (default) - HTTPS certificate management only
+  - `CADDY_FALLBACK_PORT=8080` (default) - Fallback handler
 
 ## Critical Implementation Details
 
@@ -192,12 +410,23 @@ sudo sbx uninstall
 5. **Show current config** - Displays existing config.json and returns to menu
 
 ## Key File Locations
+
+### Runtime Files
 - Binary: `/usr/local/bin/sing-box`
-- Config: `/etc/sing-box/config.json` 
+- Config: `/etc/sing-box/config.json`
 - Client info: `/etc/sing-box/client-info.txt` (persisted for `sbx info` command)
 - Service: `/etc/systemd/system/sing-box.service`
 - Certificates: `/etc/ssl/sbx/<domain>/fullchain.pem` and `privkey.pem`
-- Management tools: `/usr/local/bin/sbx-manager` and `/usr/local/bin/sbx` (symlink)
+
+### Management Tools
+- Manager script: `/usr/local/bin/sbx-manager`
+- Manager symlink: `/usr/local/bin/sbx`
+- Library modules: `/usr/local/lib/sbx/*.sh` (9 modules installed during setup)
+
+### Backup & Data
+- Backup directory: `/var/backups/sbx/`
+- Backup files: `sbx-backup-YYYYMMDD-HHMMSS.tar.gz[.enc]`
+- Backup retention: 30 days (configurable via `sbx backup cleanup`)
 
 ## Official Documentation Access (Git Submodule)
 
@@ -346,6 +575,25 @@ This ensures you always have access to the most up-to-date official documentatio
 ```
 
 ## Recent Critical Fixes & Improvements (2025-10)
+
+### v2.0 Modular Architecture (2025-10-08)
+- **Complete Modularization**: Refactored 2,294-line monolithic script into 9 focused modules (3,153 lines)
+- **Streamlined Main Installer**: Reduced install_multi.sh from 2,294 to ~500 lines via module delegation
+- **New Features**: Added backup/restore (AES-256 encryption), multi-client export (v2rayN, Clash, QR codes, subscriptions)
+- **Enhanced Management Tool**: Integrated 11 new commands into sbx-manager (backup, export operations)
+- **CI/CD Integration**: GitHub Actions with ShellCheck validation, syntax checking, security scanning
+- **Production-Grade Quality**: Comprehensive error handling, atomic operations, graceful degradation
+- **Key Modules**:
+  - `lib/common.sh` - Global utilities and logging (308 lines)
+  - `lib/network.sh` - Network operations (242 lines)
+  - `lib/validation.sh` - Input validation and security (331 lines)
+  - `lib/certificate.sh` - Caddy-based certificate management (102 lines)
+  - `lib/caddy.sh` - Caddy automatic TLS integration (429 lines)
+  - `lib/config.sh` - Configuration generation (330 lines)
+  - `lib/service.sh` - Service management (230 lines)
+  - `lib/ui.sh` - User interface (310 lines)
+  - `lib/backup.sh` - Backup/restore (291 lines)
+  - `lib/export.sh` - Client config export (345 lines)
 
 ### Configuration Modernization (2025-10-07)
 - **DNS Configuration Upgrade**: Implemented explicit DNS servers using 1.12.0+ format (`type: "local"`) for better reliability
