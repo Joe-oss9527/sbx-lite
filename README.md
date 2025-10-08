@@ -2,11 +2,16 @@
 
 Official sing-box one-click deployment script with VLESS-REALITY, VLESS-WS-TLS, and Hysteria2 support.
 
+**v2.0** - Modular architecture with enhanced features and production-grade quality.
+
 ## Features
 
 - **Zero-config Reality deployment** - Auto IP detection, no domain required
 - **Multi-protocol support** - REALITY (default), WS-TLS, Hysteria2 (optional)
 - **sing-box 1.12.0+ compliant** - Modern DNS configuration, IPv6 dual-stack
+- **Backup & restore** - AES-256 encrypted backups with 30-day retention
+- **Client config export** - v2rayN, Clash, QR codes, subscription links
+- **Modular architecture** - 9 focused modules, streamlined codebase
 - **QR code generation** - Easy client import via terminal display
 - **Performance optimized** - TCP Fast Open enabled, 5-10% latency reduction
 
@@ -39,6 +44,7 @@ DOMAIN=your.domain.com CERT_MODE=le_http bash <(curl -fsSL ...)
 
 ## Management Commands
 
+**Service Management**
 ```bash
 sbx info          # Show configuration and URIs
 sbx qr            # Display QR codes for client import
@@ -47,11 +53,34 @@ sbx restart       # Restart service
 sbx log           # View live logs
 sbx check         # Validate configuration
 sbx start|stop    # Control service
+```
+
+**Backup & Restore**
+```bash
+sbx backup create --encrypt     # Create encrypted backup
+sbx backup list                 # List available backups
+sbx backup restore <file>       # Restore from backup
+sbx backup cleanup              # Delete old backups (30+ days)
+```
+
+**Client Configuration Export**
+```bash
+sbx export v2rayn reality       # Export v2rayN JSON config
+sbx export clash                # Export Clash YAML config
+sbx export uri all              # Export all share URIs
+sbx export qr ./qr-codes/       # Generate QR code images
+sbx export subscription         # Generate subscription link
+```
+
+**System**
+```bash
 sbx uninstall     # Complete removal (requires root)
+sbx help          # Show all commands
 ```
 
 **Configuration**: `/etc/sing-box/config.json`
 **Default ports**: 443 (Reality), 8444 (WS-TLS), 8443 (Hysteria2)
+**Backups**: `/var/backups/sbx/` (encrypted with AES-256)
 
 ## Client Compatibility
 
@@ -72,6 +101,32 @@ sbx uninstall     # Complete removal (requires root)
 
 **Reconfiguration**
 - Re-run installation command to overwrite existing setup
+
+## Architecture (v2.0)
+
+**Modular Design**
+- **9 library modules** (3,153 lines) in `lib/` directory
+- **Streamlined installer** (~500 lines, down from 2,294)
+- **CI/CD integration** with automated quality checks
+- **Production-grade** error handling and validation
+
+**Key Modules**
+- `lib/common.sh` - Global utilities and logging
+- `lib/network.sh` - Network operations and IP detection
+- `lib/validation.sh` - Input validation and security
+- `lib/certificate.sh` - ACME/Let's Encrypt integration
+- `lib/config.sh` - sing-box JSON configuration generation
+- `lib/service.sh` - systemd service management
+- `lib/ui.sh` - User interface and prompts
+- `lib/backup.sh` - Backup and restore functionality
+- `lib/export.sh` - Client configuration export
+
+**Installed Components**
+- Main installer: `install_multi.sh`
+- Management tool: `/usr/local/bin/sbx-manager`
+- Library modules: `/usr/local/lib/sbx/*.sh`
+- Configuration: `/etc/sing-box/config.json`
+- Client info: `/etc/sing-box/client-info.txt`
 
 ## Technical Details
 
