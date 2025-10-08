@@ -589,6 +589,12 @@ uninstall_flow() {
     rm -f "$SB_BIN" /usr/local/bin/sbx-manager /usr/local/bin/sbx
     rm -rf "$SB_CONF_DIR" "$CERT_DIR_BASE" /usr/local/lib/sbx
 
+    # Remove Caddy if installed
+    if have caddy; then
+        msg "Removing Caddy..."
+        caddy_uninstall || warn "Failed to remove Caddy completely"
+    fi
+
     success "sing-box uninstalled successfully"
 }
 

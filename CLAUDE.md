@@ -44,8 +44,8 @@ DOMAIN=1.2.3.4 bash install_multi.sh
 # Test Reality with domain
 DOMAIN=test.domain.com bash install_multi.sh
 
-# Test full installation with certificates  
-DOMAIN=test.domain.com CERT_MODE=cf_dns CF_Token='token' bash install_multi.sh
+# Test full installation with automatic certificates (Caddy)
+DOMAIN=test.domain.com bash install_multi.sh
 
 # Test uninstall functionality
 FORCE=1 bash install_multi.sh uninstall
@@ -118,13 +118,23 @@ The project follows a clean modular architecture with clear separation of concer
    - `validate_env_vars()` - Environment variable validation
    - `validate_menu_choice()`, `validate_yes_no()` - User input validation
 
-4. **lib/certificate.sh** (249 lines) - ACME integration
-   - `acme_install()` - Install/upgrade acme.sh client
-   - `acme_issue_cf_dns()` - Cloudflare DNS-01 challenge
-   - `acme_issue_le_http()` - Let's Encrypt HTTP-01 challenge
-   - `maybe_issue_cert()` - Intelligent certificate routing
-   - Certificate expiry checking and renewal
+4. **lib/certificate.sh** (102 lines) - Caddy-based certificate management
+   - `maybe_issue_cert()` - Automatic certificate issuance via Caddy
+   - `check_cert_expiry()` - Certificate expiration checking
+   - Automatic certificate mode detection for domains
    - Certificate-key compatibility verification
+   - Integration with Caddy for Let's Encrypt certificates
+
+4.5. **lib/caddy.sh** (429 lines) - Caddy automatic TLS management
+   - `caddy_install()` - Install/upgrade Caddy binary from GitHub
+   - `caddy_setup_auto_tls()` - Configure Caddy for automatic HTTPS
+   - `caddy_setup_cert_sync()` - Sync certificates from Caddy to sing-box
+   - `caddy_wait_for_cert()` - Wait for certificate issuance with timeout
+   - `caddy_create_renewal_hook()` - Automatic certificate renewal hooks
+   - `caddy_uninstall()` - Clean Caddy removal
+   - Non-conflicting port configuration (8445 for HTTPS cert management)
+   - Systemd service integration with automatic startup
+   - Daily certificate sync via systemd timer
 
 5. **lib/config.sh** (330 lines) - sing-box configuration generation
    - `create_base_config()` - Base configuration with DNS settings
@@ -288,13 +298,24 @@ export -f msg warn err success die
 - `stop_service()` - Graceful shutdown with timeout
 - `remove_service()` - Clean service uninstallation
 
-### Certificate Integration (lib/certificate.sh)
-- `maybe_issue_cert()` - Routes to appropriate ACME method based on CERT_MODE
-- `acme_issue_cf_dns()` - Cloudflare DNS-01 via acme.sh integration
-- `acme_issue_le_http()` - Let's Encrypt HTTP-01 via acme.sh integration
-- `acme_install()` - Install/upgrade acme.sh client
+### Certificate Integration (lib/certificate.sh, lib/caddy.sh)
+- `maybe_issue_cert()` - Automatic certificate issuance when domain is provided
 - Certificate files stored in `/etc/ssl/sbx/<domain>/`
-- Certificate expiry checking and renewal support
+- Certificate expiry checking and validation support
+- **Caddy Integration** (lib/caddy.sh):
+  - `caddy_install()` - Installs latest Caddy from GitHub releases
+  - `caddy_setup_auto_tls()` - Configures Caddy for automatic HTTPS on port 8445
+  - `caddy_setup_cert_sync()` - Syncs certificates from Caddy to sing-box directory
+  - `caddy_wait_for_cert()` - Waits for Let's Encrypt certificate issuance (60s timeout)
+  - `caddy_create_renewal_hook()` - Daily systemd timer for certificate sync
+  - Caddy runs on dedicated ports to avoid conflicts with sing-box:
+    - Port 80: HTTP (ACME HTTP-01 challenge)
+    - Port 8445: HTTPS (certificate management only)
+    - Port 8080: Fallback handler
+  - sing-box uses standard ports for proxy traffic:
+    - Port 443: VLESS-REALITY
+    - Port 8444: VLESS-WS-TLS
+    - Port 8443: Hysteria2
 
 ### User Interface (lib/ui.sh)
 - `show_logo()` - Display application banner
@@ -321,13 +342,19 @@ export -f msg warn err success die
   - **Domains enable full mode**: Can add WS-TLS and Hysteria2 with certificates
 
 ### Certificate Configuration
-- `CERT_MODE=cf_dns` + `CF_Token='token'` - Cloudflare DNS-01 challenge
-- `CERT_MODE=le_http` - Let's Encrypt HTTP-01 challenge (requires port 80 open)
+- **Automatic Mode** (default when domain is provided): Uses Caddy for Let's Encrypt HTTP-01 challenge
+- `CERT_MODE=caddy` - Explicitly use Caddy for automatic TLS (default for domain-based installations)
 - `CERT_FULLCHAIN=/path/fullchain.pem` + `CERT_KEY=/path/privkey.pem` - Use existing certificates
+- **Port Requirements**: Port 80 must be open for HTTP-01 ACME challenge verification
 
 ### Port Overrides (Optional)
-- `REALITY_PORT=443` (default), `WS_PORT=8444` (default), `HY2_PORT=8443` (default)
-- Fallback ports (24443, 24444, 24445) used automatically if primary ports occupied
+- **sing-box Ports**:
+  - `REALITY_PORT=443` (default), `WS_PORT=8444` (default), `HY2_PORT=8443` (default)
+  - Fallback ports (24443, 24444, 24445) used automatically if primary ports occupied
+- **Caddy Ports** (for certificate management):
+  - `CADDY_HTTP_PORT=80` (default) - HTTP and ACME HTTP-01 challenge
+  - `CADDY_HTTPS_PORT=8445` (default) - HTTPS certificate management only
+  - `CADDY_FALLBACK_PORT=8080` (default) - Fallback handler
 
 ## Critical Implementation Details
 
@@ -560,7 +587,8 @@ This ensures you always have access to the most up-to-date official documentatio
   - `lib/common.sh` - Global utilities and logging (308 lines)
   - `lib/network.sh` - Network operations (242 lines)
   - `lib/validation.sh` - Input validation and security (331 lines)
-  - `lib/certificate.sh` - ACME integration (249 lines)
+  - `lib/certificate.sh` - Caddy-based certificate management (102 lines)
+  - `lib/caddy.sh` - Caddy automatic TLS integration (429 lines)
   - `lib/config.sh` - Configuration generation (330 lines)
   - `lib/service.sh` - Service management (230 lines)
   - `lib/ui.sh` - User interface (310 lines)
