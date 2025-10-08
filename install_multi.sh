@@ -234,8 +234,8 @@ download_singbox() {
         tag=$(echo "$raw" | grep '"tag_name":' | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')
     fi
 
-    # Extract download URL
-    url=$(echo "$raw" | grep '"browser_download_url":' | grep -E "${arch}.*\.tar\.gz\"" | head -1 | cut -d'"' -f4)
+    # Extract download URL (explicitly match linux-${arch}.tar.gz to avoid android builds)
+    url=$(echo "$raw" | grep '"browser_download_url":' | grep -E "linux-${arch}\.tar\.gz\"" | head -1 | cut -d'"' -f4)
 
     if [[ -z "$url" ]]; then
         rm -rf "$tmp"
@@ -438,14 +438,14 @@ open_firewall() {
     if have firewall-cmd; then
         for port in "${ports_to_open[@]}"; do
             firewall-cmd --permanent --add-port="${port}/tcp" 2>/dev/null || true
-            [[ "$port" == "$HY2_PORT_CHOSEN" ]] && firewall-cmd --permanent --add-port="${port}/udp" 2>/dev/null || true
+            [[ -n "${HY2_PORT_CHOSEN:-}" && "$port" == "$HY2_PORT_CHOSEN" ]] && firewall-cmd --permanent --add-port="${port}/udp" 2>/dev/null || true
         done
         firewall-cmd --reload 2>/dev/null || true
         success "  ✓ Firewall configured (firewalld)"
     elif have ufw; then
         for port in "${ports_to_open[@]}"; do
             ufw allow "${port}/tcp" 2>/dev/null || true
-            [[ "$port" == "$HY2_PORT_CHOSEN" ]] && ufw allow "${port}/udp" 2>/dev/null || true
+            [[ -n "${HY2_PORT_CHOSEN:-}" && "$port" == "$HY2_PORT_CHOSEN" ]] && ufw allow "${port}/udp" 2>/dev/null || true
         done
         success "  ✓ Firewall configured (ufw)"
     else

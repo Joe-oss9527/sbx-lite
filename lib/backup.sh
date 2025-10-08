@@ -7,9 +7,9 @@
 readonly _SBX_BACKUP_LOADED=1
 
 # Source dependencies
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
-source "${SCRIPT_DIR}/common.sh"
+source "${_LIB_DIR}/common.sh"
 
 #==============================================================================
 # Configuration

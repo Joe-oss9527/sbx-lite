@@ -7,11 +7,11 @@
 readonly _SBX_SERVICE_LOADED=1
 
 # Source dependencies
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
-source "${SCRIPT_DIR}/common.sh"
+source "${_LIB_DIR}/common.sh"
 # shellcheck source=lib/network.sh
-source "${SCRIPT_DIR}/network.sh"
+source "${_LIB_DIR}/network.sh"
 
 #==============================================================================
 # Service File Creation
