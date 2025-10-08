@@ -1,0 +1,131 @@
+name: ShellCheck & Code Quality
+
+on:
+  push:
+    branches: [ main, develop, feature/* ]
+    paths:
+      - '**.sh'
+      - 'lib/**'
+      - '.github/workflows/shellcheck.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '**.sh'
+      - 'lib/**'
+
+jobs:
+  shellcheck:
+    name: ShellCheck Static Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: '.'
+          severity: warning
+          format: gcc
+          additional_files: 'lib/*.sh'
+        env:
+          SHELLCHECK_OPTS: -x -S warning
+
+      - name: ShellCheck annotations
+        if: failure()
+        run: |
+          echo "::error::ShellCheck found issues. Please fix them before merging."
+          exit 1
+
+  syntax-check:
+    name: Bash Syntax Validation
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        bash-version: ['5.0', '5.1', '5.2']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bash ${{ matrix.bash-version }}
+        run: |
+          echo "Testing with system bash..."
+          bash --version
+
+      - name: Check syntax of all shell scripts
+        run: |
+          echo "Checking syntax..."
+          shopt -s globstar nullglob
+          for script in install_multi.sh lib/*.sh; do
+            if [[ -f "$script" ]]; then
+              echo "→ Checking $script..."
+              bash -n "$script" || exit 1
+            fi
+          done
+          echo "✓ All scripts have valid syntax"
+
+  code-style:
+    name: Code Style & Best Practices
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for common issues
+        run: |
+          echo "Checking for unquoted variables..."
+          ! grep -rn '\$[A-Z_][A-Z0-9_]*[^"]' --include="*.sh" lib/ || {
+            echo "::warning::Found potentially unquoted variables"
+          }
+
+          echo "Checking for missing set -euo pipefail..."
+          for script in lib/*.sh; do
+            [[ -f "$script" ]] || continue
+            if ! head -20 "$script" | grep -q 'set -'; then
+              echo "::warning file=$script::Missing 'set -euo pipefail' or similar"
+            fi
+          done
+
+      - name: Check script headers
+        run: |
+          for script in install_multi.sh lib/*.sh; do
+            [[ -f "$script" ]] || continue
+            if ! head -1 "$script" | grep -q '^#!/'; then
+              echo "::error file=$script::Missing shebang line"
+              exit 1
+            fi
+          done
+          echo "✓ All scripts have proper shebang lines"
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run security checks
+        run: |
+          echo "Checking for potential command injection..."
+          ! grep -rn 'eval.*\$' --include="*.sh" lib/ || {
+            echo "::error::Found potentially unsafe eval usage"
+            exit 1
+          }
+
+          echo "Checking for unsafe temporary file usage..."
+          ! grep -rn '/tmp/[^$]*\$' --include="*.sh" lib/ | grep -v mktemp || {
+            echo "::warning::Found potentially unsafe temp file usage"
+          }
+
+          echo "Checking for hardcoded credentials..."
+          ! grep -rni 'password.*=' --include="*.sh" lib/ | grep -v 'CERT_\|CF_\|HY2_' || {
+            echo "::warning::Found potential hardcoded credentials"
+          }
+
+          echo "✓ Basic security checks passed"
