@@ -104,12 +104,20 @@ validate_cert_files() {
     warn "Certificate is expired or will expire soon"
   fi
 
-  # Verify certificate and key match
-  local cert_modulus key_modulus
-  cert_modulus=$(openssl x509 -noout -modulus -in "$fullchain" 2>/dev/null | openssl md5)
-  key_modulus=$(openssl rsa -noout -modulus -in "$key" 2>/dev/null | openssl md5)
+  # Verify certificate and key match (support both RSA and EC keys)
+  local cert_pubkey key_pubkey
 
-  if [[ -n "$cert_modulus" && -n "$key_modulus" && "$cert_modulus" != "$key_modulus" ]]; then
+  # Extract public key from certificate
+  cert_pubkey=$(openssl x509 -in "$fullchain" -noout -pubkey 2>/dev/null | openssl md5)
+
+  # Extract public key from private key (try EC first, then RSA)
+  key_pubkey=$(openssl ec -in "$key" -pubout 2>/dev/null | openssl md5)
+  if [[ -z "$key_pubkey" ]] || [[ "$key_pubkey" == "d41d8cd98f00b204e9800998ecf8427e" ]]; then
+    # EC failed, try RSA
+    key_pubkey=$(openssl rsa -in "$key" -pubout 2>/dev/null | openssl md5)
+  fi
+
+  if [[ -n "$cert_pubkey" && -n "$key_pubkey" && "$cert_pubkey" != "$key_pubkey" ]]; then
     err "Certificate and private key do not match"
     return 1
   fi

@@ -111,6 +111,21 @@ acme_issue_cf_dns() {
 
 # Issue certificate using Let's Encrypt HTTP-01 challenge
 acme_issue_le_http() {
+  # Install socat for standalone mode (required by acme.sh HTTP-01)
+  if ! have socat; then
+    msg "Installing socat for ACME HTTP-01 challenge..."
+    if have apt-get; then
+      apt-get update && apt-get install -y socat
+    elif have dnf; then
+      dnf install -y socat
+    elif have yum; then
+      yum install -y socat
+    else
+      die "Failed to install socat. Please install it manually: apt install socat / yum install socat"
+    fi
+    success "  ✓ socat installed"
+  fi
+
   # Check port 80 availability
   port_in_use 80 && die "Port 80 is in use; stop the service or use CERT_MODE=cf_dns"
 
@@ -163,13 +178,24 @@ acme_issue_le_http() {
 
 # Issue certificate based on CERT_MODE or use existing
 maybe_issue_cert() {
-  [[ -n "$CERT_MODE" ]] || return 0
-
   # Check if certificate files already provided
   if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" && -f "$CERT_FULLCHAIN" && -f "$CERT_KEY" ]]; then
     msg "Using provided certificate paths."
     validate_cert_files "$CERT_FULLCHAIN" "$CERT_KEY" || die "Certificate validation failed"
     return 0
+  fi
+
+  # Auto-enable certificate issuance if domain is provided but CERT_MODE is not set
+  if [[ -z "$CERT_MODE" ]]; then
+    if [[ -n "$DOMAIN" && "${REALITY_ONLY_MODE:-0}" != "1" ]]; then
+      warn "No CERT_MODE specified - enabling automatic certificate issuance via HTTP-01"
+      info "  ℹ Port 80 must be open for ACME HTTP-01 challenge"
+      info "  ℹ To use DNS validation, set: CERT_MODE=cf_dns CF_Token='your-token'"
+      export CERT_MODE="le_http"
+    else
+      # No domain or Reality-only mode - skip certificate issuance
+      return 0
+    fi
   fi
 
   # Install acme.sh
