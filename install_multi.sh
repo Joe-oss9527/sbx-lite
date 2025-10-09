@@ -3,8 +3,9 @@
 # One-click official sing-box with VLESS-REALITY, VLESS-WS-TLS, and Hysteria2
 #
 # Usage (install):
-#   bash install_multi.sh                                    # Reality-only with auto IP
-#   DOMAIN=example.com bash install_multi.sh                 # Full setup
+#   bash install_multi.sh                                    # Interactive mode
+#   AUTO_INSTALL=1 bash install_multi.sh                     # Non-interactive (auto-detect IP)
+#   DOMAIN=example.com bash install_multi.sh                 # Full setup with domain
 #   DOMAIN=example.com CERT_MODE=cf_dns CF_Token='xxx' ...  # With certificates
 #
 # Usage (uninstall):
@@ -159,6 +160,20 @@ check_existing_installation() {
     service_status="$(check_service_status && echo "running" || echo "stopped")"
 
     if [[ "$current_version" != "not_installed" || -f "$SB_CONF" || -f "$SB_SVC" ]]; then
+        # Auto-install mode: default to fresh install without prompting
+        if [[ "${AUTO_INSTALL:-0}" == "1" ]]; then
+            msg "Auto-install mode: performing fresh install..."
+            if [[ -f "$SB_CONF" ]]; then
+                local backup_file
+                backup_file="${SB_CONF}.backup.$(date +%Y%m%d_%H%M%S)"
+                cp "$SB_CONF" "$backup_file"
+                success "  ✓ Backed up existing config to: $backup_file"
+            fi
+            export SKIP_CONFIG_GEN=0
+            export SKIP_BINARY_DOWNLOAD=0
+            return 0
+        fi
+
         latest_version="$(get_latest_version)"
         version_status="$(compare_versions "$current_version" "$latest_version")"
 
@@ -326,37 +341,45 @@ gen_materials() {
 
     # Handle DOMAIN/IP detection
     if [[ -z "${DOMAIN:-}" ]]; then
-        echo
-        echo "========================================"
-        echo "Server Address Configuration"
-        echo "========================================"
-        echo "Options:"
-        echo "  1. Press Enter for Reality-only (auto-detect IP)"
-        echo "  2. Enter domain name for full setup (Reality + WS-TLS + Hysteria2)"
-        echo "  3. Enter IP address manually for Reality-only"
-        echo
-        echo "Note: Domain must be 'DNS only' (gray cloud) in Cloudflare"
-        echo
-
-        local input
-        read -rp "Domain or IP (press Enter to auto-detect): " input
-        input=$(sanitize_input "$input")
-
-        if [[ -z "$input" ]]; then
-            msg "Auto-detecting server IP..."
+        # Auto-install mode: auto-detect IP without prompting
+        if [[ "${AUTO_INSTALL:-0}" == "1" ]]; then
+            msg "Auto-install mode: detecting server IP..."
             DOMAIN=$(get_public_ip) || die "Failed to detect server IP"
             success "Detected server IP: $DOMAIN"
             export REALITY_ONLY_MODE=1
-        elif validate_ip_address "$input"; then
-            DOMAIN="$input"
-            success "Using IP address: $DOMAIN"
-            export REALITY_ONLY_MODE=1
-        elif validate_domain "$input"; then
-            DOMAIN="$input"
-            success "Using domain: $DOMAIN"
-            export REALITY_ONLY_MODE=0
         else
-            die "Invalid domain or IP address: $input"
+            echo
+            echo "========================================"
+            echo "Server Address Configuration"
+            echo "========================================"
+            echo "Options:"
+            echo "  1. Press Enter for Reality-only (auto-detect IP)"
+            echo "  2. Enter domain name for full setup (Reality + WS-TLS + Hysteria2)"
+            echo "  3. Enter IP address manually for Reality-only"
+            echo
+            echo "Note: Domain must be 'DNS only' (gray cloud) in Cloudflare"
+            echo
+
+            local input
+            read -rp "Domain or IP (press Enter to auto-detect): " input
+            input=$(sanitize_input "$input")
+
+            if [[ -z "$input" ]]; then
+                msg "Auto-detecting server IP..."
+                DOMAIN=$(get_public_ip) || die "Failed to detect server IP"
+                success "Detected server IP: $DOMAIN"
+                export REALITY_ONLY_MODE=1
+            elif validate_ip_address "$input"; then
+                DOMAIN="$input"
+                success "Using IP address: $DOMAIN"
+                export REALITY_ONLY_MODE=1
+            elif validate_domain "$input"; then
+                DOMAIN="$input"
+                success "Using domain: $DOMAIN"
+                export REALITY_ONLY_MODE=0
+            else
+                die "Invalid domain or IP address: $input"
+            fi
         fi
     else
         # Determine if domain or IP
