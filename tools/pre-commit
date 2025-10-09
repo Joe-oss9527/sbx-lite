@@ -1,0 +1,29 @@
+#!/bin/bash
+# Pre-commit hook for code quality checks
+
+set -e
+
+echo "→ Running pre-commit checks..."
+
+# Run ShellCheck if available
+if command -v shellcheck >/dev/null 2>&1; then
+  echo "  ✓ ShellCheck..."
+  shellcheck -x -S warning install_multi.sh lib/*.sh 2>/dev/null || {
+    echo "❌ ShellCheck failed. Please fix issues before committing."
+    exit 1
+  }
+else
+  echo "  ⚠  ShellCheck not installed (skipping)"
+fi
+
+# Check syntax
+echo "  ✓ Syntax check..."
+for script in install_multi.sh lib/*.sh; do
+  [[ -f "$script" ]] || continue
+  bash -n "$script" || {
+    echo "❌ Syntax error in $script"
+    exit 1
+  }
+done
+
+echo "✅ All pre-commit checks passed!"
