@@ -51,6 +51,19 @@ HY2_PORT="${HY2_PORT:-$HY2_PORT_DEFAULT}"
 
 SINGBOX_VERSION="${SINGBOX_VERSION:-}"
 
+# Dynamic variables (generated during installation)
+UUID="${UUID:-}"
+PRIV="${PRIV:-}"
+PUB="${PUB:-}"
+SID="${SID:-}"
+PUBLIC_KEY="${PUBLIC_KEY:-}"
+SHORT_ID="${SHORT_ID:-}"
+HY2_PASS="${HY2_PASS:-}"
+SNI="${SNI:-}"
+REALITY_PORT_CHOSEN="${REALITY_PORT_CHOSEN:-}"
+WS_PORT_CHOSEN="${WS_PORT_CHOSEN:-}"
+HY2_PORT_CHOSEN="${HY2_PORT_CHOSEN:-}"
+
 #==============================================================================
 # Color Definitions
 #==============================================================================

@@ -287,7 +287,8 @@ export_subscription() {
 
   # Display access URL if web server detected
   if systemctl is-active nginx >/dev/null 2>&1 || systemctl is-active apache2 >/dev/null 2>&1; then
-    local sub_url="http://${DOMAIN}/$(basename "$output_file")"
+    local sub_url
+    sub_url="http://${DOMAIN}/$(basename "$output_file")"
     info "Subscription URL: $sub_url"
   fi
 }

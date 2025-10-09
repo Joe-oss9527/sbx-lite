@@ -32,6 +32,33 @@ for module in common network validation certificate config service ui backup exp
     fi
 done
 
+# Note: The following variables are defined in lib/common.sh and sourced above
+# ShellCheck cannot trace them through dynamic sourcing, so we declare them here
+# to suppress SC2154 warnings. They are actually defined and exported by the modules.
+: "${SB_BIN:=/usr/local/bin/sing-box}"
+: "${SB_CONF_DIR:=/etc/sing-box}"
+: "${SB_CONF:=$SB_CONF_DIR/config.json}"
+: "${SB_SVC:=/etc/systemd/system/sing-box.service}"
+: "${CLIENT_INFO:=$SB_CONF_DIR/client-info.txt}"
+: "${REALITY_PORT:=443}"
+: "${REALITY_PORT_FALLBACK:=24443}"
+: "${WS_PORT:=8444}"
+: "${WS_PORT_FALLBACK:=24444}"
+: "${HY2_PORT:=8443}"
+: "${HY2_PORT_FALLBACK:=24445}"
+: "${SNI_DEFAULT:=www.microsoft.com}"
+: "${CERT_DIR_BASE:=/etc/ssl/sbx}"
+: "${CERT_FULLCHAIN:=}"
+: "${CERT_KEY:=}"
+: "${B:=}"
+: "${N:=}"
+: "${G:=}"
+: "${Y:=}"
+: "${R:=}"
+: "${CYAN:=}"
+: "${BLUE:=}"
+: "${PURPLE:=}"
+
 #==============================================================================
 # Additional Helper Functions
 #==============================================================================
@@ -133,7 +160,8 @@ check_existing_installation() {
             1)  # Fresh install
                 msg "Performing fresh install..."
                 if [[ -f "$SB_CONF" ]]; then
-                    local backup_file="${SB_CONF}.backup.$(date +%Y%m%d_%H%M%S)"
+                    local backup_file
+                    backup_file="${SB_CONF}.backup.$(date +%Y%m%d_%H%M%S)"
                     cp "$SB_CONF" "$backup_file"
                     success "  ✓ Backed up existing config to: $backup_file"
                 fi

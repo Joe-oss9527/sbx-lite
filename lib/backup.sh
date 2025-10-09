@@ -25,7 +25,8 @@ BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 # Create comprehensive backup of sing-box configuration
 backup_create() {
   local encrypt="${1:-false}"
-  local backup_name="sbx-backup-$(date +%Y%m%d-%H%M%S)"
+  local backup_name
+  backup_name="sbx-backup-$(date +%Y%m%d-%H%M%S)"
   local temp_dir
   temp_dir=$(mktemp -d) || die "Failed to create temp directory"
   local backup_root="$temp_dir/$backup_name"
