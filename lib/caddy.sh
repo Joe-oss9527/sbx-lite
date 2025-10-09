@@ -334,38 +334,83 @@ caddy_create_renewal_hook() {
 
   msg "  - Creating certificate renewal hook..."
 
-  cat > "$hook_script" <<EOF
+  # Create hook script with single-quoted HEREDOC to prevent variable expansion
+  # Domain is passed as argument for security (prevents command injection)
+  cat > "$hook_script" <<'EOFSCRIPT'
 #!/usr/bin/env bash
 # Caddy certificate sync hook
 # Syncs certificates from Caddy to sing-box and restarts service
 
-DOMAIN="$domain"
-CADDY_CERT_DIR="\$(find /var/lib/caddy/certificates -type d -name "\${DOMAIN}" | head -1)"
-TARGET_DIR="$target_dir"
+set -euo pipefail
 
-if [[ -f "\${CADDY_CERT_DIR}/\${DOMAIN}.crt" && -f "\${CADDY_CERT_DIR}/\${DOMAIN}.key" ]]; then
-  cp "\${CADDY_CERT_DIR}/\${DOMAIN}.crt" "\${TARGET_DIR}/fullchain.pem"
-  cp "\${CADDY_CERT_DIR}/\${DOMAIN}.key" "\${TARGET_DIR}/privkey.pem"
-  chmod 600 "\${TARGET_DIR}/fullchain.pem" "\${TARGET_DIR}/privkey.pem"
+# Domain and target directory are passed as arguments
+DOMAIN="${1:?Domain not specified}"
+TARGET_DIR="${2:?Target directory not specified}"
 
-  # Restart sing-box to use new certificate
-  systemctl reload sing-box 2>/dev/null || systemctl restart sing-box
-
-  logger -t caddy-cert-sync "Certificate synced and sing-box reloaded for \${DOMAIN}"
+# Strict domain validation - only allow alphanumeric, dots, and hyphens
+if [[ ! "$DOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$ ]]; then
+    logger -t caddy-cert-sync "ERROR: Invalid domain format: $DOMAIN"
+    exit 1
 fi
-EOF
 
-  chmod 755 "$hook_script"
+# Validate domain length (max 253 characters per RFC)
+if [[ ${#DOMAIN} -gt 253 ]]; then
+    logger -t caddy-cert-sync "ERROR: Domain too long: $DOMAIN"
+    exit 1
+fi
 
-  # Create systemd timer for periodic sync (daily check)
+# Find Caddy certificate directory
+CADDY_CERT_DIR="$(find /var/lib/caddy/certificates -type d -name "${DOMAIN}" 2>/dev/null | head -1)"
+
+if [[ -z "$CADDY_CERT_DIR" ]]; then
+    logger -t caddy-cert-sync "WARNING: Certificate directory not found for domain: $DOMAIN"
+    exit 0  # Not an error, cert may not be issued yet
+fi
+
+# Check if certificates exist
+if [[ -f "${CADDY_CERT_DIR}/${DOMAIN}.crt" && -f "${CADDY_CERT_DIR}/${DOMAIN}.key" ]]; then
+    # Ensure target directory exists
+    mkdir -p "$TARGET_DIR"
+
+    # Copy certificates with secure permissions
+    cp "${CADDY_CERT_DIR}/${DOMAIN}.crt" "${TARGET_DIR}/fullchain.pem"
+    cp "${CADDY_CERT_DIR}/${DOMAIN}.key" "${TARGET_DIR}/privkey.pem"
+    chmod 600 "${TARGET_DIR}/fullchain.pem" "${TARGET_DIR}/privkey.pem"
+
+    # Reload sing-box service
+    if systemctl is-active sing-box >/dev/null 2>&1; then
+        if systemctl reload sing-box 2>/dev/null; then
+            logger -t caddy-cert-sync "Certificate synced and sing-box reloaded for ${DOMAIN}"
+        else
+            logger -t caddy-cert-sync "Certificate synced, restarting sing-box for ${DOMAIN}"
+            systemctl restart sing-box
+        fi
+    else
+        logger -t caddy-cert-sync "Certificate synced for ${DOMAIN} (sing-box not running)"
+    fi
+else
+    logger -t caddy-cert-sync "WARNING: Certificate files not found in $CADDY_CERT_DIR"
+fi
+EOFSCRIPT
+
+  chmod 750 "$hook_script"  # More restrictive: owner+group execute only
+  chown root:root "$hook_script" 2>/dev/null || true
+
+  # Create systemd service - pass domain and target_dir as arguments
+  # Use printf %q to properly escape arguments
+  local escaped_domain
+  local escaped_target
+  escaped_domain=$(printf '%q' "$domain")
+  escaped_target=$(printf '%q' "$target_dir")
+
   cat > /etc/systemd/system/caddy-cert-sync.service <<EOF
 [Unit]
-Description=Sync Caddy certificates to sing-box
+Description=Sync Caddy certificates to sing-box for $domain
 After=caddy.service
 
 [Service]
 Type=oneshot
-ExecStart=$hook_script
+ExecStart=$hook_script $escaped_domain $escaped_target
 EOF
 
   cat > /etc/systemd/system/caddy-cert-sync.timer <<EOF

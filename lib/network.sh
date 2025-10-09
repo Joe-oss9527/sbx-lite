@@ -84,7 +84,7 @@ port_in_use() {
   return 1
 }
 
-# Allocate port with retry logic and fallback
+# Allocate port with retry logic, atomic checks, and fallback
 allocate_port() {
   local port="$1"
   local fallback="$2"
@@ -92,12 +92,53 @@ allocate_port() {
   local retry_count=0
   local max_retries=3
 
+  # Ensure lock directory exists
+  mkdir -p /var/lock 2>/dev/null || true
+
+  # Helper function: atomic port check with file lock
+  try_allocate_port() {
+    local p="$1"
+    local lock_file="/var/lock/sbx-port-${p}.lock"
+
+    # Use flock for atomic check (non-blocking)
+    # File descriptor 200 is used for the lock
+    (
+      # Try to acquire exclusive lock (non-blocking)
+      if ! flock -n 200; then
+        # Lock held by another process - port is being allocated
+        return 1
+      fi
+
+      # Lock acquired - now check if port is actually in use
+      if port_in_use "$p"; then
+        return 1
+      fi
+
+      # Port is free and we have the lock
+      # Test if we can actually connect to ensure port is available
+      # Use bash's /dev/tcp test (quick and no external deps)
+      if timeout 1 bash -c "exec 3<>/dev/tcp/127.0.0.1/${p}" 2>/dev/null; then
+        exec 3<&- 2>/dev/null || true
+        # Connection succeeded - port is actually in use
+        return 1
+      fi
+
+      # Port is truly available
+      echo "$p"
+      return 0
+
+    ) 200>"$lock_file"
+
+    # Return status from subshell
+    return $?
+  }
+
   # First try the preferred port with retries
   while [[ $retry_count -lt $max_retries ]]; do
-    if ! port_in_use "$port"; then
-      echo "$port"
+    if try_allocate_port "$port"; then
       return 0
     fi
+
     if [[ $retry_count -eq 0 ]]; then
       msg "$name port $port in use, retrying in 2 seconds..." >&2
     fi
@@ -105,10 +146,10 @@ allocate_port() {
     ((retry_count++))
   done
 
-  # Try fallback port
-  if ! port_in_use "$fallback"; then
+  # Try fallback port with same atomic check
+  if try_allocate_port "$fallback"; then
     warn "$name port $port persistently in use; switching to $fallback" >&2
-    echo "$fallback"
+    return 0
   else
     die "Both $name ports $port and $fallback are in use. Please free up these ports or specify different ones."
   fi

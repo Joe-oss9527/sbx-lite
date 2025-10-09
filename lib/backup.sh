@@ -101,12 +101,48 @@ EOF
     msg "Encrypting backup..."
 
     local password="${BACKUP_PASSWORD:-}"
+    local password_file=""
+
     if [[ -z "$password" ]]; then
+      # Generate cryptographically secure password
       password=$(openssl rand -base64 32)
+
+      # Save password to secure key file
+      local key_dir="${BACKUP_DIR}/backup-keys"
+      mkdir -p "$key_dir"
+      chmod 700 "$key_dir"
+
+      password_file="${key_dir}/$(basename "${archive_path%.tar.gz}").key"
+      echo "$password" > "$password_file"
+      chmod 400 "$password_file"  # Read-only for owner
+      chown root:root "$password_file" 2>/dev/null || true
+
       echo
-      warn "SAVE THIS PASSWORD SECURELY - YOU WILL NEED IT FOR RESTORE:"
-      echo -e "${B}${G}$password${N}"
+      success "Backup password saved securely to:"
+      echo -e "  ${B}${G}$password_file${N}"
+      warn "  Keep this file safe - you'll need it for restore!"
       echo
+
+      # Optional: Offer to copy to clipboard if xclip/xsel available
+      if command -v xclip >/dev/null 2>&1; then
+        local copy_clip
+        read -r -p "Copy password to clipboard? [y/N]: " copy_clip
+        if [[ "$copy_clip" =~ ^[Yy]$ ]]; then
+          echo -n "$password" | xclip -selection clipboard 2>/dev/null || \
+          echo -n "$password" | xclip -selection primary 2>/dev/null
+          success "Password copied to clipboard"
+        fi
+      elif command -v xsel >/dev/null 2>&1; then
+        local copy_clip
+        read -r -p "Copy password to clipboard? [y/N]: " copy_clip
+        if [[ "$copy_clip" =~ ^[Yy]$ ]]; then
+          echo -n "$password" | xsel --clipboard 2>/dev/null || \
+          echo -n "$password" | xsel --primary 2>/dev/null
+          success "Password copied to clipboard"
+        fi
+      fi
+    else
+      info "Using password from BACKUP_PASSWORD environment variable"
     fi
 
     openssl enc -aes-256-cbc -salt -pbkdf2 -in "$archive_path" \
@@ -115,6 +151,10 @@ EOF
     rm "$archive_path"
     archive_path="$archive_path.enc"
     success "  ✓ Backup encrypted"
+
+    if [[ -n "$password_file" ]]; then
+      info "  Password file: $password_file"
+    fi
   fi
 
   # Cleanup temp directory
@@ -159,11 +199,34 @@ backup_restore() {
   local archive_to_extract="$backup_file"
   if [[ "$backup_file" =~ \.enc$ ]]; then
     msg "Decrypting backup..."
-    [[ -n "$password" ]] || read -rsp "Enter backup password: " password
-    echo
+
+    # Try to get password from various sources
+    if [[ -z "$password" ]]; then
+      # Try to find corresponding key file
+      local backup_basename
+      backup_basename=$(basename "$backup_file" .enc)
+      local key_file="${BACKUP_DIR}/backup-keys/${backup_basename}.key"
+
+      if [[ -f "$key_file" ]]; then
+        msg "  - Found password key file: $key_file"
+        password=$(cat "$key_file") || die "Failed to read password from key file"
+      elif [[ -n "${BACKUP_PASSWORD:-}" ]]; then
+        password="$BACKUP_PASSWORD"
+        msg "  - Using password from BACKUP_PASSWORD environment variable"
+      else
+        # Prompt user for password
+        read -rsp "Enter backup password: " password
+        echo
+      fi
+    fi
+
+    [[ -n "$password" ]] || die "No password provided for encrypted backup"
 
     openssl enc -aes-256-cbc -d -pbkdf2 -in "$backup_file" \
-      -out "$temp_dir/decrypted.tar.gz" -k "$password" || die "Decryption failed"
+      -out "$temp_dir/decrypted.tar.gz" -k "$password" || {
+        rm -rf "$temp_dir"
+        die "Decryption failed (wrong password?)"
+      }
 
     archive_to_extract="$temp_dir/decrypted.tar.gz"
     success "  ✓ Backup decrypted"
@@ -172,10 +235,32 @@ backup_restore() {
   # Extract archive
   tar -xzf "$archive_to_extract" -C "$temp_dir" || die "Failed to extract archive"
 
-  # Find backup root directory
-  local backup_root
-  backup_root=$(find "$temp_dir" -maxdepth 1 -type d -name "sbx-backup-*" | head -1)
-  [[ -d "$backup_root" ]] || die "Invalid backup structure"
+  # Find backup root directory (securely)
+  local backup_dirname
+  # Use -printf %f to get only the basename, preventing path traversal
+  backup_dirname=$(find "$temp_dir" -maxdepth 1 -mindepth 1 -type d -name "sbx-backup-*" -printf "%f\n" | head -1)
+
+  # Validate directory name exists
+  if [[ -z "$backup_dirname" ]]; then
+    rm -rf "$temp_dir"
+    die "Invalid backup structure: no backup directory found"
+  fi
+
+  # Strict validation: only allow expected format (prevents path traversal)
+  # Expected format: sbx-backup-YYYYMMDD-HHMMSS (exactly)
+  if [[ ! "$backup_dirname" =~ ^sbx-backup-[0-9]{8}-[0-9]{6}$ ]]; then
+    rm -rf "$temp_dir"
+    die "Invalid backup directory name: $backup_dirname (possible path traversal attempt)"
+  fi
+
+  # Reconstruct full path safely (no user-controlled path components)
+  local backup_root="${temp_dir}/${backup_dirname}"
+
+  # Final validation
+  if [[ ! -d "$backup_root" ]]; then
+    rm -rf "$temp_dir"
+    die "Backup directory not found: $backup_root"
+  fi
 
   # Stop service before restore
   if systemctl is-active sing-box >/dev/null 2>&1; then

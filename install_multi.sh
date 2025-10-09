@@ -421,19 +421,54 @@ install_manager_script() {
     local manager_template="${SCRIPT_DIR}/bin/sbx-manager.sh"
 
     if [[ -f "$manager_template" ]]; then
-        cp "$manager_template" /usr/local/bin/sbx-manager
-        chmod +x /usr/local/bin/sbx-manager
+        local manager_path="/usr/local/bin/sbx-manager"
+        local symlink_path="/usr/local/bin/sbx"
+        local lib_path="/usr/local/lib/sbx"
 
-        # Create symlink
-        ln -sf /usr/local/bin/sbx-manager /usr/local/bin/sbx
+        # Safely handle existing manager binary
+        if [[ -e "$manager_path" && ! -f "$manager_path" ]]; then
+            die "$manager_path exists but is not a regular file"
+        fi
 
-        # Install library modules to /usr/local/lib/sbx for manager to use
-        mkdir -p /usr/local/lib/sbx
-        cp "${SCRIPT_DIR}"/lib/*.sh /usr/local/lib/sbx/
-        chmod 644 /usr/local/lib/sbx/*.sh
+        # Safely handle existing symlink
+        if [[ -L "$symlink_path" ]]; then
+            # It's a symlink, safe to remove and recreate
+            rm "$symlink_path"
+        elif [[ -e "$symlink_path" ]]; then
+            # File exists but is not a symlink - backup and warn
+            local backup_path
+            backup_path="${symlink_path}.backup.$(date +%s)"
+            warn "File exists at $symlink_path (not a symlink)"
+            mv "$symlink_path" "$backup_path"
+            warn "  Backed up to $backup_path"
+        fi
+
+        # Install manager using temporary file + atomic move
+        local temp_manager
+        temp_manager=$(mktemp) || die "Failed to create temporary file"
+        chmod 755 "$temp_manager"
+        cp "$manager_template" "$temp_manager" || {
+            rm -f "$temp_manager"
+            die "Failed to copy manager template"
+        }
+
+        # Atomic move to final location
+        mv "$temp_manager" "$manager_path" || die "Failed to install manager"
+
+        # Create symlink safely
+        ln -sf "$manager_path" "$symlink_path"
+
+        # Safely install library modules
+        if [[ -e "$lib_path" && ! -d "$lib_path" ]]; then
+            die "$lib_path exists but is not a directory"
+        fi
+
+        mkdir -p "$lib_path"
+        cp "${SCRIPT_DIR}"/lib/*.sh "$lib_path/"
+        chmod 644 "$lib_path"/*.sh
 
         success "  ✓ Management commands installed: sbx-manager, sbx"
-        success "  ✓ Library modules installed to /usr/local/lib/sbx/"
+        success "  ✓ Library modules installed to $lib_path/"
     else
         warn "Manager template not found, creating basic version..."
         # Fallback to inline version if template not found
