@@ -110,22 +110,42 @@ compare_versions() {
     current="${current#v}"
     latest="${latest#v}"
 
+    # Handle unknown versions
+    if [[ "$current" == "unknown" || "$latest" == "unknown" ]]; then
+        echo "unknown"
+        return 0
+    fi
+
+    # Exact match
     if [[ "$current" == "$latest" ]]; then
         echo "current"
-    elif [[ "$current" == "unknown" || "$latest" == "unknown" ]]; then
-        echo "unknown"
-    else
-        # Simple numeric comparison (good enough for most cases)
-        if printf '%s\n%s\n' "$current" "$latest" | sort -V | head -1 | grep -q "^$current$"; then
-            if [[ "$current" != "$latest" ]]; then
-                echo "outdated"
-            else
-                echo "current"
-            fi
-        else
-            echo "newer"
-        fi
+        return 0
     fi
+
+    # Semantic version comparison (major.minor.patch)
+    IFS='.' read -r -a current_parts <<< "$current"
+    IFS='.' read -r -a latest_parts <<< "$latest"
+
+    # Compare each component
+    for i in 0 1 2; do
+        local curr_part="${current_parts[$i]:-0}"
+        local late_part="${latest_parts[$i]:-0}"
+
+        # Remove non-numeric suffixes (e.g., "1-beta")
+        curr_part="${curr_part%%-*}"
+        late_part="${late_part%%-*}"
+
+        if [[ "$curr_part" -lt "$late_part" ]]; then
+            echo "outdated"
+            return 0
+        elif [[ "$curr_part" -gt "$late_part" ]]; then
+            echo "newer"
+            return 0
+        fi
+    done
+
+    # All components equal (shouldn't reach here if equality check worked)
+    echo "current"
 }
 
 #==============================================================================

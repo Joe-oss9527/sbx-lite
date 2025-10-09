@@ -178,9 +178,11 @@ detect_ipv6_support() {
         ipv6_supported=true
       else
         # Fallback test: check if we can create IPv6 socket
-        if timeout 3 bash -c 'exec 3<>/dev/tcp/[::1]/22' 2>/dev/null; then
-          exec 3<&-
-          exec 3>&-
+        # Fixed: File descriptors must be closed in the same subshell they're opened
+        if timeout 3 bash -c 'exec 3<>/dev/tcp/[::1]/22 2>/dev/null && exec 3<&- && exec 3>&-'; then
+          ipv6_supported=true
+        elif [[ -n "$(ip -6 addr show scope global 2>/dev/null)" ]]; then
+          # Alternative fallback: Check if any global IPv6 address exists
           ipv6_supported=true
         fi
       fi
@@ -230,7 +232,7 @@ validate_reality_dest() {
   return 0
 }
 
-# Safe HTTP GET with timeout and retry protection
+# Safe HTTP GET with timeout, retry protection, and HTTPS enforcement
 safe_http_get() {
   local url="$1"
   local output_file="${2:-}"
@@ -238,24 +240,61 @@ safe_http_get() {
   local retry_count=0
   local timeout_seconds=30
 
+  # Security: Enforce HTTPS for security-critical domains
+  if [[ "$url" =~ github\.com|githubusercontent\.com|cloudflare\.com ]]; then
+    if [[ ! "$url" =~ ^https:// ]]; then
+      err "Security: Downloads from ${url%%/*} must use HTTPS"
+      return 1
+    fi
+  fi
+
   while [[ $retry_count -lt $max_retries ]]; do
     if have curl; then
+      # Enhanced curl options for security
+      local curl_opts=(
+        -fsSL
+        --max-time "$timeout_seconds"
+      )
+
+      # Add SSL/TLS security options for HTTPS URLs
+      if [[ "$url" =~ ^https:// ]]; then
+        curl_opts+=(
+          --proto '=https'        # Only allow HTTPS protocol
+          --tlsv1.2               # Minimum TLS 1.2
+          --ssl-reqd              # Require SSL/TLS
+        )
+      fi
+
       if [[ -n "$output_file" ]]; then
-        if timeout "$timeout_seconds" curl -fsSL --max-time "$timeout_seconds" "$url" -o "$output_file" 2>/dev/null; then
+        if timeout "$timeout_seconds" curl "${curl_opts[@]}" "$url" -o "$output_file" 2>/dev/null; then
           return 0
         fi
       else
-        if timeout "$timeout_seconds" curl -fsSL --max-time "$timeout_seconds" "$url" 2>/dev/null; then
+        if timeout "$timeout_seconds" curl "${curl_opts[@]}" "$url" 2>/dev/null; then
           return 0
         fi
       fi
     elif have wget; then
+      # Enhanced wget options for security
+      local wget_opts=(
+        -q
+        --timeout="$timeout_seconds"
+      )
+
+      # Add SSL/TLS security options for HTTPS URLs
+      if [[ "$url" =~ ^https:// ]]; then
+        wget_opts+=(
+          --https-only            # Only use HTTPS
+          --secure-protocol=TLSv1_2  # Minimum TLS 1.2
+        )
+      fi
+
       if [[ -n "$output_file" ]]; then
-        if timeout "$timeout_seconds" wget -qO "$output_file" --timeout="$timeout_seconds" "$url" 2>/dev/null; then
+        if timeout "$timeout_seconds" wget "${wget_opts[@]}" -O "$output_file" "$url" 2>/dev/null; then
           return 0
         fi
       else
-        if timeout "$timeout_seconds" wget -qO- --timeout="$timeout_seconds" "$url" 2>/dev/null; then
+        if timeout "$timeout_seconds" wget "${wget_opts[@]}" -O- "$url" 2>/dev/null; then
           return 0
         fi
       fi

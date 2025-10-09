@@ -106,22 +106,40 @@ validate_cert_files() {
 
   # Verify certificate and key match (support both RSA and EC keys)
   local cert_pubkey key_pubkey
+  local empty_md5="d41d8cd98f00b204e9800998ecf8427e"
 
   # Extract public key from certificate
   cert_pubkey=$(openssl x509 -in "$fullchain" -noout -pubkey 2>/dev/null | openssl md5)
 
-  # Extract public key from private key (try EC first, then RSA)
-  key_pubkey=$(openssl ec -in "$key" -pubout 2>/dev/null | openssl md5)
-  if [[ -z "$key_pubkey" ]] || [[ "$key_pubkey" == "d41d8cd98f00b204e9800998ecf8427e" ]]; then
-    # EC failed, try RSA
-    key_pubkey=$(openssl rsa -in "$key" -pubout 2>/dev/null | openssl md5)
-  fi
-
-  if [[ -n "$cert_pubkey" && -n "$key_pubkey" && "$cert_pubkey" != "$key_pubkey" ]]; then
-    err "Certificate and private key do not match"
+  # Validate certificate extraction succeeded
+  if [[ -z "$cert_pubkey" || "$cert_pubkey" == "$empty_md5" ]]; then
+    err "Failed to extract public key from certificate"
     return 1
   fi
 
+  # Try EC key extraction first (suppress errors)
+  key_pubkey=$(openssl ec -in "$key" -pubout 2>/dev/null | openssl md5)
+
+  # If EC failed (empty or error hash), try RSA
+  if [[ -z "$key_pubkey" || "$key_pubkey" == "$empty_md5" ]]; then
+    key_pubkey=$(openssl rsa -in "$key" -pubout 2>/dev/null | openssl md5)
+  fi
+
+  # Final validation of key extraction
+  if [[ -z "$key_pubkey" || "$key_pubkey" == "$empty_md5" ]]; then
+    err "Failed to extract public key from private key (unsupported key type?)"
+    return 1
+  fi
+
+  # Compare public keys
+  if [[ "$cert_pubkey" != "$key_pubkey" ]]; then
+    err "Certificate and private key do not match"
+    err "  Certificate pubkey hash: $cert_pubkey"
+    err "  Private key pubkey hash: $key_pubkey"
+    return 1
+  fi
+
+  # All validations passed
   return 0
 }
 

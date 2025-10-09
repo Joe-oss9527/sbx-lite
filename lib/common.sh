@@ -197,14 +197,20 @@ generate_uuid() {
 
   # Method 4: OpenSSL with proper UUID v4 format
   # UUID v4 format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
-  # where y is one of [8, 9, a, b]
-  local hex
+  # where y is one of [8, 9, a, b] (variant bits)
+  local hex variant_byte variant_value
   hex=$(openssl rand -hex 16) || return 1
+
+  # Use cryptographically secure random for variant bits (not bash $RANDOM)
+  variant_byte=$(openssl rand -hex 1)
+  # Convert to decimal and ensure it's in range 8-11 (binary 10xx)
+  variant_value=$(( 8 + (0x${variant_byte} % 4) ))
+
   printf '%s-%s-4%s-%x%s-%s' \
     "${hex:0:8}" \
     "${hex:8:4}" \
     "${hex:13:3}" \
-    $(( 8 + RANDOM % 4 )) \
+    "$variant_value" \
     "${hex:17:3}" \
     "${hex:20:12}"
 }

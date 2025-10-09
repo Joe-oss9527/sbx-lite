@@ -369,27 +369,28 @@ write_config() {
   temp_conf=$(mktemp) || die "Failed to create secure temporary file"
   chmod 600 "$temp_conf" || die "Failed to set secure permissions on temporary file"
 
+  # Setup automatic cleanup on function exit/error
+  # This trap will clean up temp file on RETURN, ERR, EXIT, INT, or TERM
+  cleanup_write_config() {
+    [[ -f "$temp_conf" ]] && rm -f "$temp_conf" 2>/dev/null || true
+  }
+  trap cleanup_write_config RETURN ERR EXIT INT TERM
+
   # Create base configuration
   local base_config
-  base_config=$(create_base_config "$ipv6_supported" "$LOG_LEVEL") || {
-    rm -f "$temp_conf"
+  base_config=$(create_base_config "$ipv6_supported" "$LOG_LEVEL") || \
     die "Failed to create base configuration"
-  }
 
   # Add Reality inbound
   local reality_config
   reality_config=$(create_reality_inbound "$UUID" "$REALITY_PORT_CHOSEN" "$listen_addr" \
-    "$SNI_DEFAULT" "$PRIV" "$SID") || {
-    rm -f "$temp_conf"
+    "$SNI_DEFAULT" "$PRIV" "$SID") || \
     die "Failed to create Reality inbound"
-  }
 
   # Add Reality inbound to base config
-  if ! base_config=$(echo "$base_config" | jq --argjson reality "$reality_config" \
-    '.inbounds += [$reality]' 2>/dev/null); then
-    rm -f "$temp_conf"
+  base_config=$(echo "$base_config" | jq --argjson reality "$reality_config" \
+    '.inbounds += [$reality]' 2>/dev/null) || \
     die "Failed to add Reality configuration to base config"
-  fi
 
   # Add WS-TLS and Hysteria2 inbounds if certificates are available
   local has_certs="false"
@@ -399,52 +400,49 @@ write_config() {
     # Add WS-TLS inbound
     local ws_config
     ws_config=$(create_ws_inbound "$UUID" "$WS_PORT_CHOSEN" "$listen_addr" \
-      "$DOMAIN" "$CERT_FULLCHAIN" "$CERT_KEY") || {
-      rm -f "$temp_conf"
+      "$DOMAIN" "$CERT_FULLCHAIN" "$CERT_KEY") || \
       die "Failed to create WS-TLS inbound"
-    }
 
     # Add Hysteria2 inbound
     local hy2_config
     hy2_config=$(create_hysteria2_inbound "$HY2_PASS" "$HY2_PORT_CHOSEN" "$listen_addr" \
-      "$CERT_FULLCHAIN" "$CERT_KEY") || {
-      rm -f "$temp_conf"
+      "$CERT_FULLCHAIN" "$CERT_KEY") || \
       die "Failed to create Hysteria2 inbound"
-    }
 
     # Add both WS and Hysteria2 inbounds
-    if ! base_config=$(echo "$base_config" | jq --argjson ws "$ws_config" \
-      --argjson hy2 "$hy2_config" '.inbounds += [$ws, $hy2]' 2>/dev/null); then
-      rm -f "$temp_conf"
+    base_config=$(echo "$base_config" | jq --argjson ws "$ws_config" \
+      --argjson hy2 "$hy2_config" '.inbounds += [$ws, $hy2]' 2>/dev/null) || \
       die "Failed to add WS-TLS and Hysteria2 configurations"
-    fi
   fi
 
   # Add route configuration
-  base_config=$(add_route_config "$base_config" "$has_certs") || {
-    rm -f "$temp_conf"
+  base_config=$(add_route_config "$base_config" "$has_certs") || \
     die "Failed to add route configuration"
-  }
 
   # Add outbound configuration
   base_config=$(add_outbound_config "$base_config")
 
   # Write configuration to temporary file
-  echo "$base_config" > "$temp_conf" || {
-    rm -f "$temp_conf"
+  echo "$base_config" > "$temp_conf" || \
     die "Failed to write configuration to temporary file"
-  }
 
   # Validate configuration syntax before applying
   if ! "$SB_BIN" check -c "$temp_conf" >/dev/null 2>&1; then
     err "Configuration validation failed:"
     "$SB_BIN" check -c "$temp_conf" 2>&1 | head -20
-    rm -f "$temp_conf"
     die "Generated configuration is invalid. This is a bug in the script."
   fi
 
+  # Disable trap before successful move (we want to keep the file)
+  trap - RETURN ERR EXIT INT TERM
+
   # Atomic move to final location
-  mv "$temp_conf" "$SB_CONF" || die "Failed to move configuration to $SB_CONF"
+  if ! mv "$temp_conf" "$SB_CONF"; then
+    # Re-enable trap for cleanup on failure
+    trap cleanup_write_config RETURN
+    die "Failed to move configuration to $SB_CONF"
+  fi
+
   chmod 600 "$SB_CONF"
 
   success "Configuration written and validated: $SB_CONF"
