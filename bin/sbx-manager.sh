@@ -112,7 +112,9 @@ case "$1" in
         echo "Service   : systemctl status sing-box"
         echo
 
-        # Reality
+        # Reality (use defaults if not set)
+        REALITY_PORT="${REALITY_PORT:-443}"
+        SNI="${SNI:-www.microsoft.com}"
         echo "INBOUND   : VLESS-REALITY  ${REALITY_PORT}/tcp"
         echo "  PublicKey = ${PUBLIC_KEY}"
         echo "  Short ID  = ${SHORT_ID}"
@@ -121,7 +123,10 @@ case "$1" in
         echo "  URI       = ${URI_REAL}"
 
         # WebSocket (if cert exists)
-        if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" ]]; then
+        if [[ -n "${CERT_FULLCHAIN:-}" && -n "${CERT_KEY:-}" ]]; then
+            WS_PORT="${WS_PORT:-8444}"
+            HY2_PORT="${HY2_PORT:-8443}"
+            HY2_PASS="${HY2_PASS:-}"
             echo
             echo "INBOUND   : VLESS-WS-TLS   ${WS_PORT}/tcp"
             echo "  CERT     = ${CERT_FULLCHAIN}"
