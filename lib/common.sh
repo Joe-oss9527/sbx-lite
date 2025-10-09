@@ -149,13 +149,19 @@ cleanup() {
     err "Script execution failed with exit code $exit_code"
   fi
 
-  # Clean up temporary files (avoid globbing issues)
+  # Clean up temporary files with more conservative time thresholds
+  # Use 60 minutes to avoid interfering with concurrent installations
   rm -f "${SB_CONF}.tmp" 2>/dev/null || true
-  find /tmp -maxdepth 1 -name 'sb*' -type f -mmin +10 -delete 2>/dev/null || true
-  find /tmp -maxdepth 1 -name 'sing-box*' -type f -mmin +10 -delete 2>/dev/null || true
+  find /tmp -maxdepth 1 -name 'sb-*.tmp' -type f -mmin +60 -delete 2>/dev/null || true
+  find /tmp -maxdepth 1 -name 'sing-box-*.tar.gz' -type f -mmin +60 -delete 2>/dev/null || true
 
   # Clean up any acme temp files
   [[ -d "/tmp/.acme.sh" ]] && rm -rf "/tmp/.acme.sh" 2>/dev/null || true
+
+  # Clean up stale port lock files (over 60 minutes old)
+  if [[ -d "/var/lock" ]]; then
+    find /var/lock -maxdepth 1 -name 'sbx-port-*.lock' -type f -mmin +60 -delete 2>/dev/null || true
+  fi
 
   # If we're in the middle of an upgrade/install and something fails,
   # try to restore service if it was previously running
@@ -197,14 +203,15 @@ generate_uuid() {
 
   # Method 4: OpenSSL with proper UUID v4 format
   # UUID v4 format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
-  # where y is one of [8, 9, a, b] (variant bits)
+  # where y is one of [8, 9, a, b] (variant bits: 10xx in binary)
   local hex variant_byte variant_value
   hex=$(openssl rand -hex 16) || return 1
 
-  # Use cryptographically secure random for variant bits (not bash $RANDOM)
+  # Use cryptographically secure random for variant bits
+  # Use bitwise AND to get last 2 bits (0-3), then add to 8 to get 8-11
   variant_byte=$(openssl rand -hex 1)
-  # Convert to decimal and ensure it's in range 8-11 (binary 10xx)
-  variant_value=$(( 8 + (0x${variant_byte} % 4) ))
+  # Extract lower 2 bits using bitwise AND, ensuring uniform distribution
+  variant_value=$(( 8 + (0x${variant_byte} & 0x3) ))
 
   printf '%s-%s-4%s-%x%s-%s' \
     "${hex:0:8}" \

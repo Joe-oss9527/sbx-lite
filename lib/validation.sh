@@ -18,9 +18,11 @@ source "${_LIB_DIR}/common.sh"
 # Enhanced input sanitization to prevent command injection
 sanitize_input() {
   local input="$1"
-  # Remove potential dangerous characters and limit length
-  input="${input//[;&|\`\$()]/}"  # Remove shell metacharacters
-  input="${input:0:256}"          # Limit length
+  # Remove potential dangerous characters using tr for explicit character removal
+  # This avoids escaping issues with backticks in parameter expansion
+  input="$(printf '%s' "$input" | tr -d ';|&`$()<>')"
+  # Limit length after sanitization
+  input="${input:0:256}"
   printf '%s' "$input"
 }
 

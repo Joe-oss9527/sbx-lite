@@ -114,16 +114,23 @@ allocate_port() {
         return 1
       fi
 
-      # Port is free and we have the lock
-      # Test if we can actually connect to ensure port is available
-      # Use bash's /dev/tcp test (quick and no external deps)
-      if timeout 1 bash -c "exec 3<>/dev/tcp/127.0.0.1/${p}" 2>/dev/null; then
-        exec 3<&- 2>/dev/null || true
-        # Connection succeeded - port is actually in use
+      # Port is free according to port_in_use check
+      # Double-check with /dev/tcp test to ensure port is truly available
+      # This catches race conditions and unusual port states
+      timeout 1 bash -c "exec 3<>/dev/tcp/127.0.0.1/${p}" 2>/dev/null
+      local connect_result=$?
+
+      if [[ $connect_result -eq 0 ]]; then
+        # Connection succeeded - something is listening on this port
+        return 1
+      elif [[ $connect_result -eq 124 ]]; then
+        # Timeout occurred - port may be filtered/firewalled
+        # Treat as unavailable to be safe
         return 1
       fi
 
-      # Port is truly available
+      # Connection refused (expected for free port) or other error
+      # Port is available for use
       echo "$p"
       return 0
 
@@ -178,8 +185,8 @@ detect_ipv6_support() {
         ipv6_supported=true
       else
         # Fallback test: check if we can create IPv6 socket
-        # Fixed: File descriptors must be closed in the same subshell they're opened
-        if timeout 3 bash -c 'exec 3<>/dev/tcp/[::1]/22 2>/dev/null && exec 3<&- && exec 3>&-'; then
+        # Subshell automatically cleans up file descriptors on exit
+        if timeout 3 bash -c 'exec 3<>/dev/tcp/[::1]/22' 2>/dev/null; then
           ipv6_supported=true
         elif [[ -n "$(ip -6 addr show scope global 2>/dev/null)" ]]; then
           # Alternative fallback: Check if any global IPv6 address exists

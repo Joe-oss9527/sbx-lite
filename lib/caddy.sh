@@ -27,7 +27,35 @@ caddy_systemd_file() { echo "/etc/systemd/system/caddy.service"; }
 caddy_data_dir() { echo "$HOME/.local/share/caddy"; }
 caddy_cert_path() {
   local domain="$1"
-  echo "$(caddy_data_dir)/certificates/acme-v02.api.letsencrypt.org-directory/${domain}"
+  local data_dir
+  data_dir=$(caddy_data_dir)
+
+  # Primary path structure (Let's Encrypt ACME v2)
+  local cert_dir="${data_dir}/certificates/acme-v02.api.letsencrypt.org-directory/${domain}"
+  if [[ -d "$cert_dir" ]]; then
+    echo "$cert_dir"
+    return 0
+  fi
+
+  # Fallback: Try staging directory
+  cert_dir="${data_dir}/certificates/acme-staging-v02.api.letsencrypt.org-directory/${domain}"
+  if [[ -d "$cert_dir" ]]; then
+    echo "$cert_dir"
+    return 0
+  fi
+
+  # Last resort: Search for domain directory (with safety limits)
+  if [[ -d "${data_dir}/certificates" ]]; then
+    cert_dir=$(find "${data_dir}/certificates" -maxdepth 3 -type d -name "${domain}" -print -quit 2>/dev/null)
+    if [[ -n "$cert_dir" && -d "$cert_dir" ]]; then
+      echo "$cert_dir"
+      return 0
+    fi
+  fi
+
+  # Return primary path even if it doesn't exist (caller should check)
+  echo "${data_dir}/certificates/acme-v02.api.letsencrypt.org-directory/${domain}"
+  return 1
 }
 
 #==============================================================================
@@ -359,10 +387,30 @@ if [[ ${#DOMAIN} -gt 253 ]]; then
     exit 1
 fi
 
-# Find Caddy certificate directory
-CADDY_CERT_DIR="$(find /var/lib/caddy/certificates -type d -name "${DOMAIN}" 2>/dev/null | head -1)"
+# Determine Caddy data directory
+CADDY_DATA_DIR="${HOME:-/root}/.local/share/caddy"
 
-if [[ -z "$CADDY_CERT_DIR" ]]; then
+# Try primary path structure (Let's Encrypt ACME v2)
+CADDY_CERT_DIR="${CADDY_DATA_DIR}/certificates/acme-v02.api.letsencrypt.org-directory/${DOMAIN}"
+
+# Fallback to staging if primary doesn't exist
+if [[ ! -d "$CADDY_CERT_DIR" ]]; then
+    CADDY_CERT_DIR="${CADDY_DATA_DIR}/certificates/acme-staging-v02.api.letsencrypt.org-directory/${DOMAIN}"
+fi
+
+# Last resort: search with safety limits
+if [[ ! -d "$CADDY_CERT_DIR" ]]; then
+    if [[ -d "${CADDY_DATA_DIR}/certificates" ]]; then
+        local found_dir
+        found_dir=$(find "${CADDY_DATA_DIR}/certificates" -maxdepth 3 -type d -name "${DOMAIN}" -print -quit 2>/dev/null)
+        if [[ -n "$found_dir" && -d "$found_dir" ]]; then
+            CADDY_CERT_DIR="$found_dir"
+        fi
+    fi
+fi
+
+# Check if directory exists
+if [[ ! -d "$CADDY_CERT_DIR" ]]; then
     logger -t caddy-cert-sync "WARNING: Certificate directory not found for domain: $DOMAIN"
     exit 0  # Not an error, cert may not be issued yet
 fi
