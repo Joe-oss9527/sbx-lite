@@ -14,24 +14,89 @@
 set -euo pipefail
 
 #==============================================================================
-# Module Loading
+# Module Loading with Smart Download
 #==============================================================================
 
 # Determine script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Load all library modules
-for module in common network validation certificate config service ui backup export; do
-    module_path="${SCRIPT_DIR}/lib/${module}.sh"
-    if [[ -f "$module_path" ]]; then
-        # shellcheck source=/dev/null
-        source "$module_path"
-    else
-        echo "ERROR: Required module not found: $module_path"
-        echo "Please ensure all lib/*.sh files are present."
-        exit 1
+# Smart module loader: downloads modules if not present (for one-liner install)
+_load_modules() {
+    local github_repo="https://raw.githubusercontent.com/Joe-oss9527/sbx-lite/main"
+    local modules=(common network validation certificate caddy config service ui backup export)
+    local temp_lib_dir=""
+
+    # Check if lib directory exists
+    if [[ ! -d "${SCRIPT_DIR}/lib" ]]; then
+        echo "[*] One-liner install detected, downloading required modules..."
+
+        # Create temporary directory for modules
+        temp_lib_dir="$(mktemp -d)" || {
+            echo "ERROR: Failed to create temporary directory"
+            exit 1
+        }
+        chmod 700 "${temp_lib_dir}"
+
+        # Download each module
+        for module in "${modules[@]}"; do
+            local module_file="${temp_lib_dir}/${module}.sh"
+            local module_url="${github_repo}/lib/${module}.sh"
+
+            echo "  Downloading ${module}.sh..."
+            if command -v curl >/dev/null 2>&1; then
+                if ! curl -fsSL --connect-timeout 10 --max-time 30 "${module_url}" -o "${module_file}"; then
+                    rm -rf "${temp_lib_dir}"
+                    echo "ERROR: Failed to download module: ${module}.sh"
+                    echo "Please check your internet connection or try:"
+                    echo "  git clone https://github.com/Joe-oss9527/sbx-lite.git && cd sbx-lite && bash install_multi.sh"
+                    exit 1
+                fi
+            elif command -v wget >/dev/null 2>&1; then
+                if ! wget -q --timeout=30 "${module_url}" -O "${module_file}"; then
+                    rm -rf "${temp_lib_dir}"
+                    echo "ERROR: Failed to download module: ${module}.sh"
+                    echo "Please check your internet connection or try:"
+                    echo "  git clone https://github.com/Joe-oss9527/sbx-lite.git && cd sbx-lite && bash install_multi.sh"
+                    exit 1
+                fi
+            else
+                rm -rf "${temp_lib_dir}"
+                echo "ERROR: Neither curl nor wget is available"
+                echo "Please install curl or wget and try again"
+                exit 1
+            fi
+        done
+
+        echo "[✓] All modules downloaded successfully"
+
+        # Create proper directory structure
+        local parent_dir
+        parent_dir="$(dirname "${temp_lib_dir}")"
+        SCRIPT_DIR="${parent_dir}/sbx-install-$$"
+        mkdir -p "${SCRIPT_DIR}/lib"
+        mv "${temp_lib_dir}"/*.sh "${SCRIPT_DIR}/lib/"
+        rmdir "${temp_lib_dir}"
+
+        # Register cleanup for temporary files
+        trap 'rm -rf "${SCRIPT_DIR}" 2>/dev/null || true' EXIT INT TERM
     fi
-done
+
+    # Load all library modules
+    for module in "${modules[@]}"; do
+        local module_path="${SCRIPT_DIR}/lib/${module}.sh"
+        if [[ -f "${module_path}" ]]; then
+            # shellcheck source=/dev/null
+            source "${module_path}"
+        else
+            echo "ERROR: Required module not found: ${module_path}"
+            echo "Please ensure all lib/*.sh files are present."
+            exit 1
+        fi
+    done
+}
+
+# Execute module loading
+_load_modules
 
 # Note: The following variables are defined in lib/common.sh and sourced above
 # ShellCheck cannot trace them through dynamic sourcing, so we declare them here

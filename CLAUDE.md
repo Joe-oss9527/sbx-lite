@@ -183,12 +183,18 @@ The project follows a clean modular architecture with clear separation of concer
 
 ### Main Components
 
-- **install_multi.sh** (~500 lines) - Main installer orchestrating all modules
-  - Module loading with error handling
+- **install_multi.sh** (~583 lines) - Main installer orchestrating all modules
+  - **Smart module loading** with automatic download for one-liner installations
+  - `_load_modules()` function (lines 23-96): Intelligent module detection and auto-download
+    - Detects missing `lib/` directory for remote installations
+    - Downloads 10 modules from GitHub to temporary directory
+    - Supports both curl and wget with timeout protection
+    - Secure temporary file handling with automatic cleanup
   - Installation flow coordination
   - Upgrade and reconfiguration scenarios
   - Uninstallation flow
   - Preserved backward compatibility
+  - **Deployment flexibility**: Works both locally (development) and remotely (production)
 
 - **bin/sbx-manager.sh** (357 lines) - Enhanced management tool
   - Service management commands
@@ -255,6 +261,14 @@ export -f msg warn err success die
 ## Code Architecture & Critical Functions
 
 ### Installation Flow (install_multi.sh)
+- `_load_modules()` - **Smart module loader** (NEW: 2025-10-17)
+  - Automatically detects execution context (local vs remote)
+  - Downloads missing modules from GitHub for one-liner installations
+  - Creates secure temporary directory with 700 permissions
+  - Implements timeout protection (10s connection, 30s download per module)
+  - Supports curl and wget with graceful fallback
+  - Automatic cleanup via `trap` on script exit
+  - Downloads 10 modules: common, network, validation, certificate, caddy, config, service, ui, backup, export
 - `install_flow()` - Main entry point orchestrating all installation steps
 - `check_existing_installation()` - Detects existing installations and presents upgrade menu (uses `lib/ui.sh`)
 - `gen_materials()` - Handles DOMAIN/IP detection, generates Reality keypairs, UUIDs, short_ids, passwords
@@ -575,6 +589,27 @@ This ensures you always have access to the most up-to-date official documentatio
 ```
 
 ## Recent Critical Fixes & Improvements (2025-10)
+
+### One-Liner Install Fix (2025-10-17)
+- **Smart Module Auto-Download**: Fixed broken `bash <(curl ...)` one-liner install by implementing intelligent module loading
+- **Problem Solved**: v2.0 modularization broke remote installation (single-file download missing `lib/` dependencies)
+- **Technical Implementation**:
+  - Added `_load_modules()` function (83 lines) with automatic module detection
+  - Auto-downloads 10 modules from GitHub when `lib/` directory is missing
+  - Dual fallback support: curl (primary) with wget (secondary)
+  - 10-second connection timeout + 30-second download timeout per module
+  - Secure temporary directory creation with 700 permissions
+  - Automatic cleanup via `trap` on exit/interrupt
+  - Comprehensive error handling with user-friendly failure messages
+- **Deployment Modes**:
+  - **Local execution**: Uses existing `lib/` directory modules (development)
+  - **Remote execution**: Auto-downloads modules to temporary directory (production)
+- **Testing & Validation**:
+  - ✅ Local mode: Verified module loading from project directory
+  - ✅ Remote mode: Tested successful download of all 10 modules
+  - ✅ Error handling: Validated cleanup on download failures
+  - ✅ Code quality: ShellCheck validation passed (no errors)
+- **User Impact**: Restores seamless one-liner installation experience while maintaining modular architecture benefits
 
 ### v2.0 Modular Architecture (2025-10-08)
 - **Complete Modularization**: Refactored 2,294-line monolithic script into 9 focused modules (3,153 lines)
