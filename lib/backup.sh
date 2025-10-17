@@ -355,13 +355,14 @@ backup_list() {
 backup_cleanup() {
   [[ -d "$BACKUP_DIR" ]] || return 0
 
-  msg "Cleaning up old backups (retention: $BACKUP_RETENTION_DAYS days)..."
+  local retention_days="${BACKUP_RETENTION_DAYS:-30}"
+  msg "Cleaning up old backups (retention: $retention_days days)..."
 
   local deleted=0
   while IFS= read -r old_backup; do
     rm -f "$old_backup"
     ((deleted++))
-  done < <(find "$BACKUP_DIR" -name "sbx-backup-*.tar.gz*" -type f -mtime +$BACKUP_RETENTION_DAYS 2>/dev/null)
+  done < <(find "$BACKUP_DIR" -name "sbx-backup-*.tar.gz*" -type f -mtime +"$retention_days" 2>/dev/null)
 
   [[ $deleted -gt 0 ]] && success "  ✓ Deleted $deleted old backup(s)" || info "  ℹ No old backups to clean"
 }

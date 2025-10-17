@@ -69,7 +69,8 @@ setup_service() {
   # Wait for service to become active (intelligent polling with timeout)
   msg "  - Waiting for service to become active..."
   local waited=0
-  while [[ $waited -lt "$SERVICE_STARTUP_MAX_WAIT_SEC" ]]; do
+  local max_wait="${SERVICE_STARTUP_MAX_WAIT_SEC:-10}"
+  while [[ $waited -lt "$max_wait" ]]; do
     if systemctl is-active sing-box >/dev/null 2>&1; then
       break
     fi
@@ -81,7 +82,7 @@ setup_service() {
   if systemctl is-active sing-box >/dev/null 2>&1; then
     success "  ✓ sing-box service is active (${waited}s)"
   else
-    err "sing-box service failed to become active within ${SERVICE_STARTUP_MAX_WAIT_SEC}s"
+    err "sing-box service failed to become active within ${max_wait}s"
     msg "Checking service status and logs..."
     systemctl status sing-box --no-pager || true
     journalctl -u sing-box -n 50 --no-pager || true

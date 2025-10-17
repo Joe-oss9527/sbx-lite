@@ -30,13 +30,11 @@ validate_config_vars() {
   for var_spec in \
     "UUID:UUID" \
     "REALITY_PORT_CHOSEN:Reality port" \
-    "SNI_DEFAULT:SNI domain" \
     "PRIV:Reality private key" \
-    "SID:Reality short ID" \
-    "LOG_LEVEL:Log level"; do
+    "SID:Reality short ID"; do
 
     IFS=':' read -r var_name var_desc <<< "$var_spec"
-    var_value="${!var_name}"
+    var_value="${!var_name:-}"
 
     if [[ -z "$var_value" ]]; then
       err "  ✗ $var_desc is not set"
@@ -373,7 +371,7 @@ write_config() {
 
   # Create base configuration
   local base_config
-  base_config=$(create_base_config "$ipv6_supported" "$LOG_LEVEL") || \
+  base_config=$(create_base_config "$ipv6_supported" "${LOG_LEVEL:-warn}") || \
     die "Failed to create base configuration"
 
   # Add Reality inbound

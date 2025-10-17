@@ -522,8 +522,13 @@ This ensures you always have access to the most up-to-date official documentatio
 
 ### Code Quality Standards
 - Always use `set -euo pipefail` at script start
-- Use existing logging functions: `msg()`, `warn()`, `err()`, `success()`, `die()`  
+- Use existing logging functions: `msg()`, `warn()`, `err()`, `success()`, `die()`
 - Wrap all variables in quotes: `"$VARIABLE"` not `$VARIABLE`
+- **Strict mode variable references**: Always use safe expansion `${VAR:-default}` for constants and readonly variables
+  - Example: `${LOG_LEVEL:-warn}` instead of `$LOG_LEVEL`
+  - Prevents "unbound variable" errors in strict mode (`set -u`)
+  - Apply to all readonly constants from `lib/common.sh`: `SERVICE_STARTUP_MAX_WAIT_SEC`, `BACKUP_RETENTION_DAYS`, `CLEANUP_OLD_FILES_MIN`, etc.
+  - Also use for indirect variable expansion: `${!var_name:-}` instead of `${!var_name}`
 - Use `[[ ]]` for conditionals, not `[ ]`
 - Local variables in functions: `local var_name="$1"`
 - Error handling: Check command success with `|| die "Error message"`
@@ -676,6 +681,11 @@ ss -lntp | grep -E ':(443|8443|8444)'
 
 **Port conflicts**: Script automatically uses fallback ports (24443, 24444, 24445) if primary ports occupied
 
-**Variable errors**: Use safe expansion `${VAR:-default}` instead of `$VAR`
+**"unbound variable" errors in strict mode**:
+- **Symptom**: Script fails with `variable: unbound variable` errors (e.g., `LOG_LEVEL: unbound variable`)
+- **Root cause**: Readonly constants referenced without default values in `set -euo pipefail` strict mode
+- **Quick fix**: Use safe expansion `${VAR:-default}` instead of `$VAR`
+- **Affected files**: `lib/config.sh`, `lib/service.sh`, `lib/backup.sh`, `lib/common.sh`
+- **See**: [Bash Coding Standards](#bash-coding-standards--security-best-practices) section for complete guidelines and examples
 
 **Timing issues**: Service startup uses intelligent polling (up to 10s) to handle slow systems

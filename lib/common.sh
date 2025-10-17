@@ -177,7 +177,7 @@ cleanup() {
   # Clean up stale port lock files (over 60 minutes old, with safe timeout)
   # This is safe because it only removes very old locks that are likely orphaned
   if [[ -d "/var/lock" ]]; then
-    find /var/lock -maxdepth 1 -name 'sbx-port-*.lock' -type f -mmin +"${CLEANUP_OLD_FILES_MIN}" -delete 2>/dev/null || true
+    find /var/lock -maxdepth 1 -name 'sbx-port-*.lock' -type f -mmin +"${CLEANUP_OLD_FILES_MIN:-60}" -delete 2>/dev/null || true
   fi
 
   # If we're in the middle of an upgrade/install and something fails,
