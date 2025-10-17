@@ -61,83 +61,97 @@ validate_domain() {
 # Certificate Validation
 #==============================================================================
 
-# Validate certificate files with security checks
+# Validate certificate files with comprehensive security checks
 validate_cert_files() {
   local fullchain="$1"
   local key="$2"
 
-  # Enhanced certificate file validation
-  [[ -n "$fullchain" && -n "$key" ]] || {
+  # Step 1: Basic path validation
+  if [[ -z "$fullchain" || -z "$key" ]]; then
     err "Certificate paths cannot be empty"
     return 1
-  }
+  fi
 
-  [[ -f "$fullchain" && -f "$key" ]] || {
-    err "Certificate files not found"
+  # Step 2: File existence check
+  if [[ ! -f "$fullchain" ]]; then
+    err "Certificate file not found: $fullchain"
     return 1
-  }
-
-  [[ -r "$fullchain" && -r "$key" ]] || {
-    err "Certificate files not readable"
+  fi
+  if [[ ! -f "$key" ]]; then
+    err "Private key file not found: $key"
     return 1
-  }
+  fi
 
-  # Check if files are not empty
-  [[ -s "$fullchain" && -s "$key" ]] || {
-    err "Certificate files are empty"
+  # Step 3: File readability check
+  if [[ ! -r "$fullchain" ]]; then
+    err "Certificate file not readable: $fullchain"
     return 1
-  }
+  fi
+  if [[ ! -r "$key" ]]; then
+    err "Private key file not readable: $key"
+    return 1
+  fi
 
-  # Validate certificate format
+  # Step 4: Non-empty file check
+  if [[ ! -s "$fullchain" ]]; then
+    err "Certificate file is empty: $fullchain"
+    return 1
+  fi
+  if [[ ! -s "$key" ]]; then
+    err "Private key file is empty: $key"
+    return 1
+  fi
+
+  # Step 5: Certificate format validation
   if ! openssl x509 -in "$fullchain" -noout 2>/dev/null; then
-    err "Invalid certificate format: $fullchain"
+    err "Invalid certificate format (not a valid X.509 certificate)"
+    err "  File: $fullchain"
     return 1
   fi
 
-  # Validate private key format
-  if ! openssl rsa -in "$key" -check -noout 2>/dev/null && \
-     ! openssl ec -in "$key" -check -noout 2>/dev/null; then
-    err "Invalid private key format: $key"
+  # Step 6: Private key format validation
+  # Try to parse as any valid key type (RSA, EC, Ed25519, etc.)
+  if ! openssl pkey -in "$key" -noout 2>/dev/null; then
+    err "Invalid private key format (not a valid private key)"
+    err "  File: $key"
     return 1
   fi
 
-  # Check certificate expiration
-  if ! openssl x509 -in "$fullchain" -checkend 0 -noout 2>/dev/null; then
-    warn "Certificate is expired or will expire soon"
+  # Step 7: Certificate expiration check (warning only)
+  if ! openssl x509 -in "$fullchain" -checkend 2592000 -noout 2>/dev/null; then
+    warn "Certificate will expire within 30 days"
   fi
 
-  # Verify certificate and key match (support both RSA and EC keys)
-  local cert_pubkey key_pubkey
-  local empty_md5="d41d8cd98f00b204e9800998ecf8427e"
+  # Step 8: Certificate-Key matching validation
+  # MD5 hash constant for empty input (indicates extraction failure)
+  readonly EMPTY_MD5_HASH="d41d8cd98f00b204e9800998ecf8427e"
 
-  # Extract public key from certificate
-  cert_pubkey=$(openssl x509 -in "$fullchain" -noout -pubkey 2>/dev/null | openssl md5)
+  # Extract public key hash from certificate
+  local cert_pubkey
+  cert_pubkey=$(openssl x509 -in "$fullchain" -noout -pubkey 2>/dev/null | openssl md5 2>/dev/null | awk '{print $2}')
 
-  # Validate certificate extraction succeeded
-  if [[ -z "$cert_pubkey" || "$cert_pubkey" == "$empty_md5" ]]; then
+  if [[ -z "$cert_pubkey" || "$cert_pubkey" == "$EMPTY_MD5_HASH" ]]; then
     err "Failed to extract public key from certificate"
+    err "  This may indicate a corrupted certificate file"
     return 1
   fi
 
-  # Try EC key extraction first (suppress errors)
-  key_pubkey=$(openssl ec -in "$key" -pubout 2>/dev/null | openssl md5)
+  # Extract public key hash from private key using generic pkey command
+  local key_pubkey
+  key_pubkey=$(openssl pkey -in "$key" -pubout 2>/dev/null | openssl md5 2>/dev/null | awk '{print $2}')
 
-  # If EC failed (empty or error hash), try RSA
-  if [[ -z "$key_pubkey" || "$key_pubkey" == "$empty_md5" ]]; then
-    key_pubkey=$(openssl rsa -in "$key" -pubout 2>/dev/null | openssl md5)
-  fi
-
-  # Final validation of key extraction
-  if [[ -z "$key_pubkey" || "$key_pubkey" == "$empty_md5" ]]; then
-    err "Failed to extract public key from private key (unsupported key type?)"
+  if [[ -z "$key_pubkey" || "$key_pubkey" == "$EMPTY_MD5_HASH" ]]; then
+    err "Failed to extract public key from private key"
+    err "  This may indicate a corrupted or unsupported key file"
     return 1
   fi
 
-  # Compare public keys
+  # Compare public key hashes
   if [[ "$cert_pubkey" != "$key_pubkey" ]]; then
     err "Certificate and private key do not match"
-    err "  Certificate pubkey hash: $cert_pubkey"
-    err "  Private key pubkey hash: $key_pubkey"
+    err "  Certificate pubkey MD5: $cert_pubkey"
+    err "  Private key pubkey MD5: $key_pubkey"
+    err "  Make sure the certificate was generated from this private key"
     return 1
   fi
 
@@ -314,46 +328,9 @@ validate_json_syntax() {
 }
 
 #==============================================================================
-# System Requirements Validation
-#==============================================================================
-
-# Check system requirements for installation
-validate_system_requirements() {
-  # Check for required commands
-  local required_cmds=("curl" "tar" "gzip" "systemctl")
-  local missing_cmds=()
-
-  for cmd in "${required_cmds[@]}"; do
-    if ! have "$cmd"; then
-      missing_cmds+=("$cmd")
-    fi
-  done
-
-  if [[ ${#missing_cmds[@]} -gt 0 ]]; then
-    err "Missing required commands: ${missing_cmds[*]}"
-    return 1
-  fi
-
-  # Check for systemd
-  if ! systemctl --version >/dev/null 2>&1; then
-    err "systemd is required but not available"
-    return 1
-  fi
-
-  # Check disk space (minimum 100MB free)
-  local free_space
-  free_space=$(df /usr/local/bin 2>/dev/null | awk 'NR==2 {print $4}')
-  if [[ -n "$free_space" && "$free_space" -lt 102400 ]]; then
-    warn "Low disk space: less than 100MB available"
-  fi
-
-  return 0
-}
-
-#==============================================================================
 # Export Functions
 #==============================================================================
 
 export -f sanitize_input validate_domain validate_cert_files validate_env_vars
 export -f validate_short_id validate_reality_sni validate_menu_choice validate_yes_no
-export -f validate_singbox_config validate_json_syntax validate_system_requirements
+export -f validate_singbox_config validate_json_syntax

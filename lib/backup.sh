@@ -104,8 +104,14 @@ EOF
     local password_file=""
 
     if [[ -z "$password" ]]; then
-      # Generate cryptographically secure password
-      password=$(openssl rand -base64 32)
+      # Generate cryptographically secure password with full 256-bit entropy
+      # 48 bytes (384 bits) of random data, base64 encoded, then truncated to 64 chars
+      password=$(openssl rand -base64 48 | tr -d '\n' | head -c 64)
+
+      # Validate password strength
+      if [[ ${#password} -lt 32 ]]; then
+        die "Failed to generate strong encryption password (insufficient entropy)"
+      fi
 
       # Save password to secure key file
       local key_dir="${BACKUP_DIR}/backup-keys"
@@ -122,25 +128,6 @@ EOF
       echo -e "  ${B}${G}$password_file${N}"
       warn "  Keep this file safe - you'll need it for restore!"
       echo
-
-      # Optional: Offer to copy to clipboard if xclip/xsel available
-      if command -v xclip >/dev/null 2>&1; then
-        local copy_clip
-        read -r -p "Copy password to clipboard? [y/N]: " copy_clip
-        if [[ "$copy_clip" =~ ^[Yy]$ ]]; then
-          echo -n "$password" | xclip -selection clipboard 2>/dev/null || \
-          echo -n "$password" | xclip -selection primary 2>/dev/null
-          success "Password copied to clipboard"
-        fi
-      elif command -v xsel >/dev/null 2>&1; then
-        local copy_clip
-        read -r -p "Copy password to clipboard? [y/N]: " copy_clip
-        if [[ "$copy_clip" =~ ^[Yy]$ ]]; then
-          echo -n "$password" | xsel --clipboard 2>/dev/null || \
-          echo -n "$password" | xsel --primary 2>/dev/null
-          success "Password copied to clipboard"
-        fi
-      fi
     else
       info "Using password from BACKUP_PASSWORD environment variable"
     fi
@@ -232,6 +219,14 @@ backup_restore() {
     success "  ✓ Backup decrypted"
   fi
 
+  # Validate tar archive integrity before extraction
+  msg "Validating backup archive integrity..."
+  if ! tar -tzf "$archive_to_extract" >/dev/null 2>&1; then
+    rm -rf "$temp_dir"
+    die "Backup archive is corrupted or not a valid tar file"
+  fi
+  success "  ✓ Archive integrity validated"
+
   # Extract archive
   tar -xzf "$archive_to_extract" -C "$temp_dir" || die "Failed to extract archive"
 
@@ -246,9 +241,10 @@ backup_restore() {
     die "Invalid backup structure: no backup directory found"
   fi
 
-  # Strict validation: only allow expected format (prevents path traversal)
-  # Expected format: sbx-backup-YYYYMMDD-HHMMSS (exactly)
-  if [[ ! "$backup_dirname" =~ ^sbx-backup-[0-9]{8}-[0-9]{6}$ ]]; then
+  # Flexible validation: allow expected format with optional suffixes (prevents path traversal)
+  # Expected format: sbx-backup-YYYYMMDD-HHMMSS[optional-suffix]
+  # Allows timezone variations and system-generated suffixes
+  if [[ ! "$backup_dirname" =~ ^sbx-backup-[0-9]{8}-[0-9]{6}[a-zA-Z0-9._-]*$ ]]; then
     rm -rf "$temp_dir"
     die "Invalid backup directory name: $backup_dirname (possible path traversal attempt)"
   fi

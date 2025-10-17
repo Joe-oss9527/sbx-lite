@@ -2,6 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Quick Navigation
+
+**Core Reference**:
+- [Development Commands](#development-commands) - Testing, validation, management commands
+- [Modular Architecture](#modular-architecture-v20) - 9 library modules structure
+- [Critical Implementation Details](#critical-implementation-details) - Security rules, patterns, compliance
+
+**Configuration**:
+- [sing-box 1.12.0 Standards](#sing-box-1120-configuration-standards) - Modern configuration patterns
+- [Environment Variables](#environment-variables--configuration) - Optional configuration variables
+- [Critical Configuration Notes](#critical-configuration-notes) - IPv6 issue and key rules
+
+**Development**:
+- [Code Architecture](#code-architecture--critical-functions) - Key functions and flow
+- [Bash Coding Standards](#bash-coding-standards--security-best-practices) - Quality and security requirements
+- [Troubleshooting](#troubleshooting) - Quick diagnostics and common issues
+
+---
+
 ## Project Overview
 
 This is **sbx-lite**, a one-click bash deployment script for official sing-box proxy server. The project features a **modular architecture (v2.0)** with 9 specialized library modules and a streamlined main installer (`install_multi.sh`) that supports three protocols: VLESS-REALITY (default), VLESS-WS-TLS (optional), and Hysteria2 (optional).
@@ -588,257 +607,75 @@ This ensures you always have access to the most up-to-date official documentatio
 }
 ```
 
-## Recent Critical Fixes & Improvements (2025-10)
+## Recent Updates
 
-### One-Liner Install Fix (2025-10-17)
-- **Smart Module Auto-Download**: Fixed broken `bash <(curl ...)` one-liner install by implementing intelligent module loading
-- **Problem Solved**: v2.0 modularization broke remote installation (single-file download missing `lib/` dependencies)
-- **Technical Implementation**:
-  - Added `_load_modules()` function (83 lines) with automatic module detection
-  - Auto-downloads 10 modules from GitHub when `lib/` directory is missing
-  - Dual fallback support: curl (primary) with wget (secondary)
-  - 10-second connection timeout + 30-second download timeout per module
-  - Secure temporary directory creation with 700 permissions
-  - Automatic cleanup via `trap` on exit/interrupt
-  - Comprehensive error handling with user-friendly failure messages
-- **Deployment Modes**:
-  - **Local execution**: Uses existing `lib/` directory modules (development)
-  - **Remote execution**: Auto-downloads modules to temporary directory (production)
-- **Testing & Validation**:
-  - ✅ Local mode: Verified module loading from project directory
-  - ✅ Remote mode: Tested successful download of all 10 modules
-  - ✅ Error handling: Validated cleanup on download failures
-  - ✅ Code quality: ShellCheck validation passed (no errors)
-- **User Impact**: Restores seamless one-liner installation experience while maintaining modular architecture benefits
+### Latest Version: v2.1.0 (2025-10-17)
+**Focus**: Security hardening and stability improvements
 
-### v2.0 Modular Architecture (2025-10-08)
-- **Complete Modularization**: Refactored 2,294-line monolithic script into 9 focused modules (3,153 lines)
-- **Streamlined Main Installer**: Reduced install_multi.sh from 2,294 to ~500 lines via module delegation
-- **New Features**: Added backup/restore (AES-256 encryption), multi-client export (v2rayN, Clash, QR codes, subscriptions)
-- **Enhanced Management Tool**: Integrated 11 new commands into sbx-manager (backup, export operations)
-- **CI/CD Integration**: GitHub Actions with ShellCheck validation, syntax checking, security scanning
-- **Production-Grade Quality**: Comprehensive error handling, atomic operations, graceful degradation
-- **Key Modules**:
-  - `lib/common.sh` - Global utilities and logging (308 lines)
-  - `lib/network.sh` - Network operations (242 lines)
-  - `lib/validation.sh` - Input validation and security (331 lines)
-  - `lib/certificate.sh` - Caddy-based certificate management (102 lines)
-  - `lib/caddy.sh` - Caddy automatic TLS integration (429 lines)
-  - `lib/config.sh` - Configuration generation (330 lines)
-  - `lib/service.sh` - Service management (230 lines)
-  - `lib/ui.sh` - User interface (310 lines)
-  - `lib/backup.sh` - Backup/restore (291 lines)
-  - `lib/export.sh` - Client config export (345 lines)
+**Key Improvements**:
+- Fixed 7 critical/high-priority security vulnerabilities
+- Enhanced backup encryption to full 256-bit entropy
+- Improved service startup with intelligent polling (2-10s adaptive)
+- Added domain validation to prevent command injection
+- Removed 88 lines of dead code, extracted 8 magic number constants
+- All changes backward compatible
 
-### Configuration Modernization (2025-10-07)
-- **DNS Configuration Upgrade**: Implemented explicit DNS servers using 1.12.0+ format (`type: "local"`) for better reliability
-- **Future-Proof Domain Resolution**: Added `route.default_domain_resolver` for sing-box 1.14.0 compatibility
-- **Performance Optimization**: Enabled TCP Fast Open by default for 5-10% connection latency reduction
-- **Verified Implementation**: All optimizations tested and validated with sing-box 1.12.9
+**For detailed release notes**, see `CHANGELOG.md`
 
-### Major Enhancements (2025-08)
-- **Reality Zero-Config Deployment**: Removed domain requirement for Reality-only mode, added auto IP detection
-- **JSON Generation Overhaul**: Replaced string concatenation with `jq` for robust JSON generation
-- **Enhanced Error Handling**: Added `trap`-based cleanup and comprehensive network retry logic
-- **Input Validation Strengthening**: Added sanitization functions and comprehensive validation
-- **🚨 IPv6 Configuration Modernization**: Implemented sing-box 1.12.0 compliant DNS strategy configuration
+### Architecture Evolution
+- **v2.1.0** (2025-10-17): Security audit and stability hardening
+- **v2.0.0** (2025-10-08): Modular architecture with 9 library modules
+- **v1.x** (2025-08): Single-file deployment, Reality-only support
 
-### Security Hardening (Latest)
-- **Command Injection Prevention**: Fixed unsafe shell globbing in cleanup functions
-- **Secure Temporary Files**: All temp files now created with `mktemp` and proper permissions (600/700)
-- **Enhanced IP Validation**: `validate_ip_address()` with octet range checks and reserved address filtering
-- **Certificate Validation Fixes**: Fixed logic bugs in certificate-key matching verification
-- **jq Error Handling**: All JSON generation operations now have explicit error checking
-- **Version Comparison Bug Fix**: Corrected semantic version comparison algorithm
-- **Timeout Protection**: Added `timeout` commands for network operations to prevent hangs
+## Critical Configuration Notes
 
-### Bug Fixes & Stability
-- **Fresh Install Service Issue**: Fixed Hysteria2 not working after Fresh install by implementing proper service restart logic
-- **Port Allocation Race Conditions**: Added post-allocation validation to prevent port conflicts
-- **Configuration Atomicity**: Implemented atomic config file operations with validation before applying
-- **Certificate Security**: Enhanced certificate validation with expiry warnings and key compatibility checks
-- **Service Startup Verification**: Added retry logic and port listening validation after service start
-- **Service Startup Timing Issue**: Fixed race condition where port validation occurred before service fully initialized (added 3-second delay)
-- **Port Checking Logic Error**: Fixed setup_service() checking for Hysteria2 ports even in Reality-only mode
-- **Management Script Local Variables**: Fixed incorrect use of 'local' keyword outside functions in sbx uninstall command
-- **Undefined Variable Errors**: Fixed script failures due to unset variables in post-installation steps with proper ${VAR:-} syntax
-- **🚨 IPv6 Connection Fix (CRITICAL)**: Fixed "network unreachable" errors by implementing proper DNS strategy configuration
+### IPv6 Connection Issue (sing-box 1.12.0+)
 
-### User Experience Improvements
-- **Simplified Installation**: `bash install_multi.sh` now works without any parameters
-- **Smart Mode Detection**: Automatic Reality-only vs full setup based on input type
-- **Better Error Messages**: More informative validation and error reporting
-- **Network Resilience**: Multiple IP detection services with fallback mechanisms
+**Symptom**: "network unreachable" errors on IPv4-only servers
 
-### Code Quality & Maintainability
-- **Production-Grade Security**: All critical vulnerabilities identified in code review have been fixed
-- **Comprehensive Error Handling**: Consistent error checking patterns throughout the script
-- **Atomic Operations**: Enhanced file operations with proper rollback on failures
-- **Input Sanitization**: Robust protection against shell injection attacks
+**Root Cause**: Deprecated `domain_strategy` in outbounds causes IPv6 connection attempts
 
-## IPv6 Configuration Issue Resolution (Critical - 2025-08-09)
-
-### ⚠️ CRITICAL ISSUE: IPv6 "network unreachable" Errors
-
-**Problem**: Clients experiencing connection failures with error messages:
-```
-ERROR [...] connection: open connection to api.anthropic.com:443 using outbound/direct[direct]: dial tcp [IPv6]:443: connect: network unreachable
-ERROR [...] inbound/vless[in-reality]: process connection from IP:port: TLS handshake: REALITY: failed to dial dest: (dial tcp [IPv6]:443: connect: network unreachable)
-```
-
-**Root Cause**: Configuration regression where deprecated `domain_strategy: "prefer_ipv4"` in outbounds was incorrectly replaced with non-functional `inet4_bind_address` configuration, causing IPv6 connection attempts on IPv4-only servers.
-
-**⚡ CRITICAL SOLUTION**: Must use sing-box 1.12.0 compliant configuration:
-
-#### ✅ CORRECT Configuration Pattern (1.12.0+):
+**Solution**: Use global DNS strategy (1.12.0+ compliant)
 ```json
 {
   "dns": {
-    "servers": [
-      {
-        "type": "local",
-        "tag": "dns-local"
-      }
-    ],
-    "strategy": "ipv4_only"  // Global DNS strategy for IPv4-only networks
+    "servers": [{"type": "local", "tag": "dns-local"}],
+    "strategy": "ipv4_only"  // For IPv4-only servers
   },
-  "inbounds": [
-    {
-      "listen": "::",  // Always use dual-stack listen (sing-box 1.12.0 standard)
-      ...
-    }
-  ],
-  "outbounds": [
-    {
-      "type": "direct",
-      "tcp_fast_open": true,  // Performance optimization
-      // NO domain_strategy field - this is deprecated!
-      // DNS strategy is handled globally in dns section
-      ...
-    }
-  ],
-  "route": {
-    "default_domain_resolver": {
-      "server": "dns-local"  // 1.14.0 compatibility
-    },
-    ...
-  }
+  "inbounds": [{"listen": "::"}],  // Dual-stack listen
+  "outbounds": [{"type": "direct"}]  // NO domain_strategy field
 }
 ```
 
-#### ❌ INCORRECT Configuration Patterns:
-```json
-{
-  // WRONG: Missing global DNS strategy for IPv4-only networks
-  "inbounds": [
-    {
-      "listen": "0.0.0.0",  // WRONG: Use :: instead for dual-stack
-      ...
-    }
-  ],
-  "outbounds": [
-    {
-      "type": "direct",
-      "domain_strategy": "prefer_ipv4",  // DEPRECATED: Will be removed in 1.14.0
-      // or
-      "inet4_bind_address": "0.0.0.0"  // INEFFECTIVE: Doesn't control DNS resolution
-      ...
-    }
-  ]
-}
-```
+**Key Rules**:
+- Use `dns.strategy: "ipv4_only"` for IPv4-only networks
+- Use `listen: "::"` for dual-stack (NEVER "0.0.0.0")
+- Remove deprecated `domain_strategy` from outbounds
+- Configure `route.default_domain_resolver` for 1.14.0 compatibility
 
-**🔧 Fix Implementation Location**: `write_config()` function in `install_multi.sh`
+## Troubleshooting
 
-**🚨 Key Implementation Rules**:
-1. **ALWAYS** use explicit DNS servers with `type: "local"` format (1.12.0+ standard)
-2. **ALWAYS** use global `dns.strategy: "ipv4_only"` for IPv4-only networks
-3. **ALWAYS** configure `route.default_domain_resolver` for 1.14.0 compatibility
-4. **ALWAYS** use `listen: "::"` for dual-stack support (sing-box 1.12.0 standard)
-5. **NEVER** use deprecated `domain_strategy` in outbounds
-6. **NEVER** use `inet4_bind_address` as DNS strategy replacement
-
-**🚨 MANDATORY Verification Steps (Run After Every Change)**:
+### Quick Diagnostics
 ```bash
-# 1. Must show NO deprecation warnings or errors
-/usr/local/bin/sing-box check -c /etc/sing-box/config.json
-
-# 2. Verify configuration structure
-cat /etc/sing-box/config.json | head -30
-
-# 3. Should see IPv4-only DNS strategy (for IPv4-only networks)
-grep -A 3 '"dns"' /etc/sing-box/config.json
-
-# 4. Should see dual-stack listen (always ::, never 0.0.0.0)
-grep '"listen"' /etc/sing-box/config.json
-
-# 5. Restart service and verify status
-systemctl restart sing-box && sleep 3 && systemctl status sing-box
-
-# 6. Monitor logs for connection errors (run 10-15 seconds)
-journalctl -u sing-box -f
-```
-
-**⚠️ FAILURE TO RUN THESE STEPS MAY RESULT IN IPv6 CONNECTION FAILURES**
-
-## Troubleshooting & Debugging
-
-### Common Installation Failures
-
-#### "Script execution failed with exit code 1" after "Starting sing-box service..."
-**Root Cause**: Race condition in service startup verification - port checking occurs before service fully initializes
-
-**Symptoms**:
-- Script shows `[*] Starting sing-box service...` then immediately fails
-- sing-box service actually starts successfully (can be verified with `systemctl status sing-box`)
-- Installation appears to fail but service is running
-
-**Debug Method**:
-```bash
-# Check if service is actually running
+# Verify service status
 systemctl status sing-box
 
-# Check if configuration is valid
+# Validate configuration
 /usr/local/bin/sing-box check -c /etc/sing-box/config.json
 
-# Check if client files were created (if not, script failed after service start)
-ls -la /etc/sing-box/client-info.txt /usr/local/bin/sbx
+# Check logs for errors
+journalctl -u sing-box -n 50
+
+# Verify port listening
+ss -lntp | grep -E ':(443|8443|8444)'
 ```
 
-**Solution**: Fixed in setup_service() by adding 3-second delay after service start and improving port checking logic for Reality-only vs full mode.
+### Common Issues
 
-#### Management Script "local: can only be used in a function" Errors
-**Root Cause**: Incorrect use of `local` keyword in sbx management script outside of function contexts
+**Service fails to start**: Check config validation and logs above
 
-**Symptoms**:
-```bash
-/usr/local/bin/sbx: line 106: local: can only be used in a function
-```
+**Port conflicts**: Script automatically uses fallback ports (24443, 24444, 24445) if primary ports occupied
 
-**Solution**: Remove `local` keywords from variable declarations in case statements - they should be regular script variables.
+**Variable errors**: Use safe expansion `${VAR:-default}` instead of `$VAR`
 
-### Debugging Methodology
-
-#### Adding Diagnostic Logging
-When script fails mysteriously:
-1. Add debug messages with `msg "[DEBUG] function_name: step description"`
-2. Check exact failure point with timing information
-3. Sometimes the debug logging itself reveals timing issues by adding small delays
-
-#### Service Startup Verification
-```bash
-# Proper service validation with timing consideration
-systemctl start sing-box
-sleep 3  # Allow service to fully initialize
-# Then check ports and status
-```
-
-#### Variable Safety Patterns
-Use safe variable expansion to prevent undefined variable errors:
-```bash
-# Safe - provides fallback value
-echo "Port: ${CHOSEN_PORT:-$DEFAULT_PORT}"
-
-# Unsafe - fails with set -u if CHOSEN_PORT is unset
-echo "Port: $CHOSEN_PORT"
-```
+**Timing issues**: Service startup uses intelligent polling (up to 10s) to handle slow systems

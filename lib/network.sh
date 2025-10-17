@@ -212,33 +212,6 @@ choose_listen_address() {
 # Network Connectivity Tests
 #==============================================================================
 
-# Validate Reality destination connectivity
-validate_reality_dest() {
-  local sni="$1"
-  local ipv6_supported="$2"
-
-  msg "Testing connectivity to Reality destination: $sni"
-
-  # Test IPv4 connection (always required)
-  if ! timeout 5 bash -c "echo '' | openssl s_client -connect $sni:443 -servername $sni" >/dev/null 2>&1; then
-    warn "IPv4 connection to $sni failed, may affect Reality handshake"
-    return 1
-  fi
-
-  # Test IPv6 connection if supported
-  if [[ "$ipv6_supported" == "true" ]]; then
-    if ! timeout 5 bash -c "echo '' | openssl s_client -connect [$sni]:443 -servername $sni" >/dev/null 2>&1; then
-      warn "IPv6 connection to $sni failed, but IPv4 works"
-    else
-      success "Both IPv4 and IPv6 connectivity to $sni verified"
-      return 0
-    fi
-  fi
-
-  success "IPv4 connectivity to Reality destination $sni verified"
-  return 0
-}
-
 # Safe HTTP GET with timeout, retry protection, and HTTPS enforcement
 safe_http_get() {
   local url="$1"
@@ -326,4 +299,4 @@ safe_http_get() {
 #==============================================================================
 
 export -f get_public_ip validate_ip_address port_in_use allocate_port validate_port
-export -f detect_ipv6_support choose_listen_address validate_reality_dest safe_http_get
+export -f detect_ipv6_support choose_listen_address safe_http_get

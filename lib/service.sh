@@ -30,9 +30,6 @@ After=network.target nss-lookup.target
 ExecStart=/usr/local/bin/sing-box run -c /etc/sing-box/config.json
 Restart=on-failure
 User=root
-# If you later switch to a non-root user, add capabilities below:
-# CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
-# AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
 LimitNOFILE=1048576
 
 [Install]
@@ -69,14 +66,22 @@ setup_service() {
   msg "Starting sing-box service..."
   systemctl start sing-box || die "Failed to start sing-box service"
 
-  # Wait for service to fully initialize
-  sleep 3
+  # Wait for service to become active (intelligent polling with timeout)
+  msg "  - Waiting for service to become active..."
+  local waited=0
+  while [[ $waited -lt "$SERVICE_STARTUP_MAX_WAIT_SEC" ]]; do
+    if systemctl is-active sing-box >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+    ((waited++))
+  done
 
   # Verify service is running
   if systemctl is-active sing-box >/dev/null 2>&1; then
-    success "  ✓ sing-box service is running"
+    success "  ✓ sing-box service is active (${waited}s)"
   else
-    err "sing-box service failed to start"
+    err "sing-box service failed to become active within ${SERVICE_STARTUP_MAX_WAIT_SEC}s"
     msg "Checking service status and logs..."
     systemctl status sing-box --no-pager || true
     journalctl -u sing-box -n 50 --no-pager || true

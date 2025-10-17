@@ -345,11 +345,6 @@ write_config() {
     warn "  ⚠ IPv6 not available - using dual-stack listen with IPv4-only DNS strategy"
   fi
 
-  # Validate Reality destination connectivity
-  if ! validate_reality_dest "$SNI_DEFAULT" "$ipv6_supported"; then
-    warn "Reality destination connectivity issues detected, but continuing with installation"
-  fi
-
   # Validate all required variables
   validate_config_vars || die "Configuration validation failed. Please check the errors above."
 

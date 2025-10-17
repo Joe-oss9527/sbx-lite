@@ -31,6 +31,16 @@ declare -r SNI_DEFAULT="${SNI_DEFAULT:-www.microsoft.com}"
 declare -r CERT_DIR_BASE="${CERT_DIR_BASE:-/etc/ssl/sbx}"
 declare -r LOG_LEVEL="${LOG_LEVEL:-warn}"
 
+# Operation timeouts and retry limits
+declare -r NETWORK_TIMEOUT_SEC=5
+declare -r SERVICE_STARTUP_MAX_WAIT_SEC=10
+declare -r SERVICE_PORT_VALIDATION_MAX_RETRIES=5
+declare -r PORT_ALLOCATION_MAX_RETRIES=3
+declare -r PORT_ALLOCATION_RETRY_DELAY_SEC=2
+declare -r CLEANUP_OLD_FILES_MIN=60
+declare -r BACKUP_RETENTION_DAYS=30
+declare -r CADDY_CERT_WAIT_TIMEOUT_SEC=60
+
 #==============================================================================
 # Global Variables (from environment)
 #==============================================================================
@@ -63,6 +73,10 @@ SNI="${SNI:-}"
 REALITY_PORT_CHOSEN="${REALITY_PORT_CHOSEN:-}"
 WS_PORT_CHOSEN="${WS_PORT_CHOSEN:-}"
 HY2_PORT_CHOSEN="${HY2_PORT_CHOSEN:-}"
+
+# Process-specific temporary directory for secure cleanup
+# Created with secure permissions and cleaned up automatically
+SBX_TMP_DIR="${SBX_TMP_DIR:-}"
 
 #==============================================================================
 # Color Definitions
@@ -149,18 +163,21 @@ cleanup() {
     err "Script execution failed with exit code $exit_code"
   fi
 
-  # Clean up temporary files with more conservative time thresholds
-  # Use 60 minutes to avoid interfering with concurrent installations
+  # Clean up process-specific temporary directory (safe)
+  if [[ -n "${SBX_TMP_DIR:-}" && -d "$SBX_TMP_DIR" ]]; then
+    # Verify it's a safe path before removal
+    if [[ "$SBX_TMP_DIR" =~ ^/tmp/sbx-[a-zA-Z0-9._-]+$ ]]; then
+      rm -rf "$SBX_TMP_DIR" 2>/dev/null || true
+    fi
+  fi
+
+  # Clean up known temporary config files (specific to this process)
   rm -f "${SB_CONF}.tmp" 2>/dev/null || true
-  find /tmp -maxdepth 1 -name 'sb-*.tmp' -type f -mmin +60 -delete 2>/dev/null || true
-  find /tmp -maxdepth 1 -name 'sing-box-*.tar.gz' -type f -mmin +60 -delete 2>/dev/null || true
 
-  # Clean up any acme temp files
-  [[ -d "/tmp/.acme.sh" ]] && rm -rf "/tmp/.acme.sh" 2>/dev/null || true
-
-  # Clean up stale port lock files (over 60 minutes old)
+  # Clean up stale port lock files (over 60 minutes old, with safe timeout)
+  # This is safe because it only removes very old locks that are likely orphaned
   if [[ -d "/var/lock" ]]; then
-    find /var/lock -maxdepth 1 -name 'sbx-port-*.lock' -type f -mmin +60 -delete 2>/dev/null || true
+    find /var/lock -maxdepth 1 -name 'sbx-port-*.lock' -type f -mmin +"${CLEANUP_OLD_FILES_MIN}" -delete 2>/dev/null || true
   fi
 
   # If we're in the middle of an upgrade/install and something fails,

@@ -360,6 +360,20 @@ caddy_create_renewal_hook() {
   local target_dir="$2"
   local hook_script="/usr/local/bin/caddy-cert-sync"
 
+  # CRITICAL: Validate domain BEFORE using it in any operation
+  # Strict validation prevents command injection and path traversal
+  if [[ ! "$domain" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$ ]]; then
+    err "Invalid domain format for certificate sync hook: $domain"
+    err "  Domain must contain only lowercase letters, numbers, dots, and hyphens"
+    return 1
+  fi
+
+  # Validate domain length (RFC 1035)
+  if [[ ${#domain} -gt 253 ]]; then
+    err "Domain too long for certificate sync hook: ${#domain} characters (max: 253)"
+    return 1
+  fi
+
   msg "  - Creating certificate renewal hook..."
 
   # Create hook script with single-quoted HEREDOC to prevent variable expansion
