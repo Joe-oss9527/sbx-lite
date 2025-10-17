@@ -16,7 +16,7 @@ source "${_LIB_DIR}/common.sh"
 #==============================================================================
 
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/sbx}"
-BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
+# BACKUP_RETENTION_DAYS is defined in lib/common.sh as readonly constant
 
 #==============================================================================
 # Backup Creation
