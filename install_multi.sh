@@ -46,25 +46,112 @@ _load_modules() {
             if command -v curl >/dev/null 2>&1; then
                 if ! curl -fsSL --connect-timeout 10 --max-time 30 "${module_url}" -o "${module_file}"; then
                     rm -rf "${temp_lib_dir}"
+                    echo ""
                     echo "ERROR: Failed to download module: ${module}.sh"
-                    echo "Please check your internet connection or try:"
-                    echo "  git clone https://github.com/Joe-oss9527/sbx-lite.git && cd sbx-lite && bash install_multi.sh"
+                    echo "URL: ${module_url}"
+                    echo ""
+                    echo "Possible causes:"
+                    echo "  1. Network connectivity issues"
+                    echo "  2. GitHub rate limiting (try again in a few minutes)"
+                    echo "  3. Repository branch/tag does not exist"
+                    echo "  4. Firewall blocking GitHub access"
+                    echo ""
+                    echo "Troubleshooting:"
+                    echo "  • Test connectivity: curl -I https://github.com"
+                    echo "  • Use git clone instead:"
+                    echo "    git clone https://github.com/Joe-oss9527/sbx-lite.git"
+                    echo "    cd sbx-lite && bash install_multi.sh"
+                    echo ""
                     exit 1
                 fi
             elif command -v wget >/dev/null 2>&1; then
                 if ! wget -q --timeout=30 "${module_url}" -O "${module_file}"; then
                     rm -rf "${temp_lib_dir}"
+                    echo ""
                     echo "ERROR: Failed to download module: ${module}.sh"
-                    echo "Please check your internet connection or try:"
-                    echo "  git clone https://github.com/Joe-oss9527/sbx-lite.git && cd sbx-lite && bash install_multi.sh"
+                    echo "URL: ${module_url}"
+                    echo ""
+                    echo "Possible causes:"
+                    echo "  1. Network connectivity issues"
+                    echo "  2. GitHub rate limiting (try again in a few minutes)"
+                    echo "  3. Repository branch/tag does not exist"
+                    echo "  4. Firewall blocking GitHub access"
+                    echo ""
+                    echo "Troubleshooting:"
+                    echo "  • Test connectivity: wget --spider https://github.com"
+                    echo "  • Use git clone instead:"
+                    echo "    git clone https://github.com/Joe-oss9527/sbx-lite.git"
+                    echo "    cd sbx-lite && bash install_multi.sh"
+                    echo ""
                     exit 1
                 fi
             else
                 rm -rf "${temp_lib_dir}"
+                echo ""
                 echo "ERROR: Neither curl nor wget is available"
-                echo "Please install curl or wget and try again"
+                echo "Please install one of the following:"
+                echo "  • curl: apt-get install curl  (Debian/Ubuntu)"
+                echo "  • wget: apt-get install wget  (Debian/Ubuntu)"
+                echo "  • curl: yum install curl      (CentOS/RHEL)"
+                echo "  • wget: yum install wget      (CentOS/RHEL)"
+                echo ""
                 exit 1
             fi
+
+            # Verify downloaded module (basic integrity checks)
+            echo "  Verifying ${module}.sh..."
+
+            # 1. Check file exists
+            if [[ ! -f "${module_file}" ]]; then
+                rm -rf "${temp_lib_dir}"
+                echo ""
+                echo "ERROR: Downloaded file not found: ${module}.sh"
+                echo "This is an unexpected error. Please report this issue."
+                echo ""
+                exit 1
+            fi
+
+            # 2. Check minimum file size (prevent empty files or error pages)
+            local file_size
+            file_size=$(stat -c%s "${module_file}" 2>/dev/null || stat -f%z "${module_file}" 2>/dev/null || echo "0")
+            if [[ "${file_size}" -lt 100 ]]; then
+                rm -rf "${temp_lib_dir}"
+                echo ""
+                echo "ERROR: Downloaded file too small: ${module}.sh (${file_size} bytes)"
+                echo ""
+                echo "This usually indicates:"
+                echo "  1. Network error during download (partial file)"
+                echo "  2. GitHub returned an error page instead of the file"
+                echo "  3. Rate limiting or authentication issues"
+                echo ""
+                echo "Please try again in a few minutes or use git clone method."
+                echo ""
+                exit 1
+            fi
+
+            # 3. Validate bash syntax (prevent corrupted or malicious files)
+            if ! bash -n "${module_file}" 2>/dev/null; then
+                rm -rf "${temp_lib_dir}"
+                echo ""
+                echo "ERROR: Invalid bash syntax in downloaded file: ${module}.sh"
+                echo ""
+                echo "This may indicate:"
+                echo "  1. Corrupted download (network issue)"
+                echo "  2. Partial/incomplete download"
+                echo "  3. Potential security issue (MITM attack)"
+                echo ""
+                echo "For security, the installation has been aborted."
+                echo "Please try again or use the git clone method."
+                echo ""
+                exit 1
+            fi
+
+            # 4. Check for module header (version compatibility check)
+            if ! grep -q "^# lib/${module}.sh" "${module_file}" 2>/dev/null; then
+                echo "  Warning: Module header not found in ${module}.sh (may indicate version mismatch)"
+            fi
+
+            echo "  ✓ ${module}.sh verified (${file_size} bytes)"
         done
 
         echo "[✓] All modules downloaded successfully"
