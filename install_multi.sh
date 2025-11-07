@@ -377,6 +377,56 @@ download_singbox() {
         die "Failed to download sing-box package"
     }
 
+    # ==================== SHA256 Checksum Verification ====================
+    msg "Verifying package integrity..."
+
+    # Download checksum file from GitHub
+    local checksum_url="${url}.sha256sum"
+    local checksum_file="$tmp/checksum.txt"
+
+    if safe_http_get "$checksum_url" "$checksum_file" 2>/dev/null; then
+        # Extract expected SHA256 hash (first field in checksum file)
+        local expected_sum
+        expected_sum=$(awk '{print $1}' "$checksum_file" | head -1)
+
+        if [[ -z "$expected_sum" ]]; then
+            warn "  ⚠ Checksum file is empty or invalid, skipping verification"
+        elif [[ ! "$expected_sum" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            warn "  ⚠ Invalid checksum format: $expected_sum"
+            warn "  ⚠ Skipping verification"
+        else
+            # Calculate actual SHA256 of downloaded package
+            local actual_sum
+            if have sha256sum; then
+                actual_sum=$(sha256sum "$pkg" | awk '{print $1}')
+            elif have shasum; then
+                actual_sum=$(shasum -a 256 "$pkg" | awk '{print $1}')
+            else
+                warn "  ⚠ No SHA256 tool available (sha256sum/shasum)"
+                warn "  ⚠ Skipping checksum verification"
+                actual_sum=""
+            fi
+
+            if [[ -n "$actual_sum" ]]; then
+                # Compare checksums (case-insensitive)
+                if [[ "${expected_sum,,}" == "${actual_sum,,}" ]]; then
+                    success "  ✓ Package integrity verified (SHA256 match)"
+                else
+                    rm -rf "$tmp"
+                    err "SHA256 checksum verification FAILED!"
+                    err "  Expected: $expected_sum"
+                    err "  Actual:   $actual_sum"
+                    die "Package may be corrupted or tampered. Aborting for security."
+                fi
+            fi
+        fi
+    else
+        warn "  ⚠ Checksum file not available from GitHub"
+        warn "  ⚠ URL: $checksum_url"
+        warn "  ⚠ Proceeding without verification (use at your own risk)"
+    fi
+    # ==================== Checksum Verification End ====================
+
     msg "Extracting package..."
     tar -xzf "$pkg" -C "$tmp" || {
         rm -rf "$tmp"

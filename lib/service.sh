@@ -44,6 +44,56 @@ EOF
 # Service Management
 #==============================================================================
 
+# Start service with retry logic for port binding failures
+start_service_with_retry() {
+  local max_retries=3
+  local retry_count=0
+  local wait_time=2
+
+  msg "Starting sing-box service..."
+
+  while [[ $retry_count -lt $max_retries ]]; do
+    # Attempt to start the service
+    if systemctl start sing-box 2>&1; then
+      sleep 2
+      # Check if service is actually active
+      if systemctl is-active sing-box >/dev/null 2>&1; then
+        success "  ✓ sing-box service started successfully"
+        return 0
+      fi
+    fi
+
+    # Service failed to start - check if it's a port binding issue
+    local error_log
+    error_log=$(journalctl -u sing-box -n 20 --no-pager 2>/dev/null | \
+                grep -iE "bind|address.*in use|listen.*failed" | head -3 || true)
+
+    if [[ -n "$error_log" ]]; then
+      ((retry_count++))
+      if [[ $retry_count -lt $max_retries ]]; then
+        warn "Port binding failed, retrying ($retry_count/$max_retries) in ${wait_time}s..."
+        warn "Error: $(echo "$error_log" | head -1)"
+        systemctl stop sing-box 2>/dev/null || true
+        sleep "$wait_time"
+        wait_time=$((wait_time * 2))  # Exponential backoff
+      else
+        err "Failed to start sing-box after $max_retries attempts"
+        err "Last error:"
+        echo "$error_log" | head -5 >&2
+        return 1
+      fi
+    else
+      # Non-port-related failure - don't retry
+      err "sing-box service failed to start (non-port issue)"
+      journalctl -u sing-box -n 30 --no-pager >&2
+      return 1
+    fi
+  done
+
+  err "Failed to start sing-box service after $max_retries retries"
+  return 1
+}
+
 # Setup and start sing-box service
 setup_service() {
   create_service_file || die "Failed to create service file"
@@ -62,9 +112,8 @@ setup_service() {
   msg "Enabling sing-box service..."
   systemctl enable sing-box || warn "Failed to enable service (continuing anyway)"
 
-  # Start the service
-  msg "Starting sing-box service..."
-  systemctl start sing-box || die "Failed to start sing-box service"
+  # Start the service with retry logic
+  start_service_with_retry || die "Failed to start sing-box service"
 
   # Wait for service to become active (intelligent polling with timeout)
   msg "  - Waiting for service to become active..."
@@ -262,6 +311,6 @@ show_service_logs() {
 # Export Functions
 #==============================================================================
 
-export -f create_service_file setup_service validate_port_listening
+export -f create_service_file start_service_with_retry setup_service validate_port_listening
 export -f check_service_status stop_service restart_service reload_service
 export -f remove_service show_service_logs
