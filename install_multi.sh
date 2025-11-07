@@ -23,7 +23,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Smart module loader: downloads modules if not present (for one-liner install)
 _load_modules() {
     local github_repo="https://raw.githubusercontent.com/Joe-oss9527/sbx-lite/main"
-    local modules=(common network validation certificate caddy config service ui backup export)
+    # Module loading order: common must be first, retry before download
+    local modules=(common retry download network validation certificate caddy config service ui backup export)
     local temp_lib_dir=""
 
     # Check if lib directory exists
@@ -180,6 +181,58 @@ _load_modules() {
             exit 1
         fi
     done
+
+    # Verify API contracts after loading all modules
+    _verify_module_apis
+}
+
+# Verify that all required functions exist (API contract validation)
+# Implements Design by Contract (DbC) principles for module compatibility
+_verify_module_apis() {
+    local all_ok=true
+
+    # Define required functions per module (API contract)
+    local -A module_contracts=(
+        ["common"]="msg warn err success die generate_uuid have need_root"
+        ["retry"]="retry_with_backoff calculate_backoff is_retriable_error"
+        ["download"]="download_file download_file_with_retry verify_downloaded_file"
+        ["network"]="get_public_ip allocate_port detect_ipv6_support"
+        ["validation"]="validate_domain validate_ip_address sanitize_input"
+        ["config"]="write_config create_reality_inbound add_route_config"
+        ["service"]="setup_service validate_port_listening restart_service"
+    )
+
+    # Verify each module's API contract
+    for module in "${!module_contracts[@]}"; do
+        local required_functions="${module_contracts[$module]}"
+        local missing_functions=()
+
+        for func in $required_functions; do
+            if ! declare -F "$func" >/dev/null 2>&1; then
+                missing_functions+=("$func")
+                all_ok=false
+            fi
+        done
+
+        if [[ ${#missing_functions[@]} -gt 0 ]]; then
+            echo "ERROR: Module API contract violation: ${module}"
+            echo "Missing functions: ${missing_functions[*]}"
+        fi
+    done
+
+    if [[ "$all_ok" != true ]]; then
+        echo ""
+        echo "This may indicate:"
+        echo "  1. Module version mismatch between install_multi.sh and lib/*.sh"
+        echo "  2. Incomplete module download"
+        echo "  3. Corrupted module files"
+        echo ""
+        echo "Please try:"
+        echo "  git clone https://github.com/Joe-oss9527/sbx-lite.git"
+        echo "  cd sbx-lite && bash install_multi.sh"
+        echo ""
+        exit 1
+    fi
 }
 
 # Execute module loading
