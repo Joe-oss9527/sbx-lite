@@ -19,7 +19,7 @@ Official sing-box one-click deployment script with VLESS-REALITY, VLESS-WS-TLS, 
 
 **Reality only (recommended)**
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Joe-oss9527/sbx-lite/main/install_multi.sh)
 ```
 
 **Reality + WS-TLS + Hysteria2 (requires domain and certificate)**
@@ -27,7 +27,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/inst
 DOMAIN=your.domain.com \
 CERT_MODE=cf_dns \
 CF_Token='your_cloudflare_token' \
-bash <(curl -fsSL https://raw.githubusercontent.com/YYvanYang/sbx-lite/main/install_multi.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Joe-oss9527/sbx-lite/main/install_multi.sh)
 ```
 
 **Additional options**
