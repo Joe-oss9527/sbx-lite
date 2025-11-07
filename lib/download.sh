@@ -40,8 +40,9 @@ check_curl_retry_support() {
         return 1
     fi
 
-    # Test if curl accepts --retry flag
-    if curl --retry 1 -o /dev/null https://www.google.com >/dev/null 2>&1; then
+    # Test if curl accepts --retry flag (without network request)
+    # Check help output for --retry flag
+    if curl --help all 2>/dev/null | grep -q -- '--retry'; then
         return 0
     fi
 
@@ -385,5 +386,4 @@ export -f verify_downloaded_file
 export -f download_and_verify
 export -f get_download_info
 
-# Module loaded successfully
-msg "✓ Download module loaded (tool: $(detect_downloader), timeout: ${DOWNLOAD_TIMEOUT}s)"
+# Module loaded successfully (silent load for cleaner output)

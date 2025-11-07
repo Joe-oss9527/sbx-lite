@@ -17,10 +17,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 #==============================================================================
 
 # Retry configuration (can be overridden via environment variables)
-readonly RETRY_MAX_ATTEMPTS="${RETRY_MAX_ATTEMPTS:-3}"
-readonly RETRY_BACKOFF_BASE="${RETRY_BACKOFF_BASE:-2}"
-readonly RETRY_BACKOFF_MAX="${RETRY_BACKOFF_MAX:-32}"
-readonly RETRY_JITTER_MAX="${RETRY_JITTER_MAX:-1000}"  # milliseconds
+# Note: Not using 'readonly' to allow retry_with_custom_backoff to temporarily override
+RETRY_MAX_ATTEMPTS="${RETRY_MAX_ATTEMPTS:-3}"
+RETRY_BACKOFF_BASE="${RETRY_BACKOFF_BASE:-2}"
+RETRY_BACKOFF_MAX="${RETRY_BACKOFF_MAX:-32}"
+RETRY_JITTER_MAX="${RETRY_JITTER_MAX:-1000}"  # milliseconds
 
 # Global retry budget (prevent retry amplification)
 readonly GLOBAL_RETRY_BUDGET="${GLOBAL_RETRY_BUDGET:-30}"
@@ -199,7 +200,14 @@ retry_with_backoff() {
         # Calculate backoff time
         local backoff_ms
         backoff_ms="$(calculate_backoff "$attempt")"
-        local backoff_sec=$(echo "scale=1; ${backoff_ms} / 1000" | bc 2>/dev/null || echo "$((backoff_ms / 1000))")
+
+        # Calculate backoff in seconds for display (use bc if available)
+        local backoff_sec
+        if command -v bc >/dev/null 2>&1; then
+            backoff_sec=$(echo "scale=1; ${backoff_ms} / 1000" | bc 2>/dev/null || echo "$((backoff_ms / 1000))")
+        else
+            backoff_sec=$((backoff_ms / 1000))
+        fi
 
         warn "Attempt ${attempt}/${max_attempts} failed (exit code: ${exit_code})"
         warn "Retrying in ${backoff_sec}s..."
@@ -207,7 +215,14 @@ retry_with_backoff() {
         # Wait with backoff (supports fractional seconds if sleep supports it)
         if sleep 0.1 2>/dev/null; then
             # sleep supports fractional seconds
-            sleep "$(echo "scale=3; ${backoff_ms} / 1000" | bc 2>/dev/null || echo "0.$((backoff_ms / 100))")"
+            if command -v bc >/dev/null 2>&1; then
+                sleep "$(echo "scale=3; ${backoff_ms} / 1000" | bc 2>/dev/null || echo "0.$((backoff_ms / 100))")"
+            else
+                # Fallback to bash arithmetic with millisecond precision
+                local sec=$((backoff_ms / 1000))
+                local ms=$((backoff_ms % 1000))
+                sleep "${sec}.${ms}"
+            fi
         else
             # Fallback to integer seconds
             sleep "$((backoff_ms / 1000 + 1))"
@@ -276,5 +291,4 @@ export -f retry_with_custom_backoff
 export -f reset_retry_counter
 export -f get_retry_stats
 
-# Module loaded successfully
-msg "✓ Retry module loaded (max attempts: ${RETRY_MAX_ATTEMPTS}, budget: ${GLOBAL_RETRY_BUDGET})"
+# Module loaded successfully (silent load for cleaner output)

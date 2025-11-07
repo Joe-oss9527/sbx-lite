@@ -296,9 +296,14 @@ _load_modules() {
             use_parallel=0
         fi
 
-        # Download modules (parallel or sequential based on capability)
+        # Download modules (parallel with fallback to sequential on failure)
         if [[ $use_parallel -eq 1 ]] && command -v xargs >/dev/null 2>&1; then
-            _download_modules_parallel "${temp_lib_dir}" "${github_repo}" "${modules[@]}"
+            # Try parallel download first
+            if ! _download_modules_parallel "${temp_lib_dir}" "${github_repo}" "${modules[@]}"; then
+                # Parallel failed, fallback to sequential
+                echo "  Retrying with sequential download..."
+                _download_modules_sequential "${temp_lib_dir}" "${github_repo}" "${modules[@]}"
+            fi
         else
             _download_modules_sequential "${temp_lib_dir}" "${github_repo}" "${modules[@]}"
         fi
