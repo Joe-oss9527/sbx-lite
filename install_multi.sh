@@ -20,6 +20,258 @@ set -euo pipefail
 # Determine script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+#==============================================================================
+# Module Download Helper Functions
+#==============================================================================
+
+# Download and verify a single module (for parallel execution)
+# This function is designed to be called by xargs in parallel
+_download_single_module() {
+    local temp_lib_dir="$1"
+    local github_repo="$2"
+    local module="$3"
+
+    local module_file="${temp_lib_dir}/${module}.sh"
+    local module_url="${github_repo}/lib/${module}.sh"
+
+    # Download module
+    if command -v curl >/dev/null 2>&1; then
+        if ! curl -fsSL --connect-timeout 10 --max-time 30 "${module_url}" -o "${module_file}" 2>&1; then
+            echo "DOWNLOAD_FAILED:${module}" >&2
+            return 1
+        fi
+    elif command -v wget >/dev/null 2>&1; then
+        if ! wget -q --timeout=30 "${module_url}" -O "${module_file}" 2>&1; then
+            echo "DOWNLOAD_FAILED:${module}" >&2
+            return 1
+        fi
+    else
+        echo "NO_DOWNLOADER:${module}" >&2
+        return 1
+    fi
+
+    # Verify downloaded file
+    if [[ ! -f "${module_file}" ]]; then
+        echo "FILE_NOT_FOUND:${module}" >&2
+        return 1
+    fi
+
+    # Check file size
+    local file_size
+    file_size=$(stat -c%s "${module_file}" 2>/dev/null || stat -f%z "${module_file}" 2>/dev/null || echo "0")
+    if [[ "${file_size}" -lt 100 ]]; then
+        echo "FILE_TOO_SMALL:${module}:${file_size}" >&2
+        return 1
+    fi
+
+    # Validate bash syntax
+    if ! bash -n "${module_file}" 2>/dev/null; then
+        echo "SYNTAX_ERROR:${module}" >&2
+        return 1
+    fi
+
+    # Success - output for progress tracking
+    echo "SUCCESS:${module}:${file_size}"
+    return 0
+}
+
+# Download modules in parallel using xargs
+_download_modules_parallel() {
+    local temp_lib_dir="$1"
+    local github_repo="$2"
+    shift 2
+    local modules=("$@")
+
+    local parallel_jobs="${PARALLEL_JOBS:-5}"
+    local total="${#modules[@]}"
+
+    echo "  Downloading ${total} modules in parallel (${parallel_jobs} jobs)..."
+
+    # Export function and variables for subshells
+    export -f _download_single_module
+    export temp_lib_dir github_repo
+
+    # Track results
+    local failed_modules=()
+    local success_count=0
+    local current=0
+
+    # Use xargs for parallel execution
+    while IFS= read -r result; do
+        ((current++))
+
+        # Parse result
+        if [[ "$result" =~ ^SUCCESS:(.+):([0-9]+)$ ]]; then
+            local mod_name="${BASH_REMATCH[1]}"
+            local mod_size="${BASH_REMATCH[2]}"
+            ((success_count++))
+
+            # Progress indicator
+            local percent=$((current * 100 / total))
+            printf "\r  [%3d%%] %d/%d modules downloaded" "$percent" "$current" "$total"
+
+        elif [[ "$result" =~ ^(DOWNLOAD_FAILED|FILE_NOT_FOUND|FILE_TOO_SMALL|SYNTAX_ERROR|NO_DOWNLOADER):(.+) ]]; then
+            local error_type="${BASH_REMATCH[1]}"
+            local mod_name="${BASH_REMATCH[2]}"
+            failed_modules+=("${mod_name}:${error_type}")
+        fi
+    done < <(printf '%s\n' "${modules[@]}" | xargs -P "$parallel_jobs" -I {} bash -c '_download_single_module "$temp_lib_dir" "$github_repo" "$@"' _ {})
+
+    echo ""  # New line after progress
+
+    # Check results
+    if [[ ${#failed_modules[@]} -gt 0 ]]; then
+        echo ""
+        echo "ERROR: Failed to download ${#failed_modules[@]} module(s):"
+        for failure in "${failed_modules[@]}"; do
+            echo "  • ${failure}"
+        done
+        echo ""
+        echo "Falling back to sequential download..."
+        return 1
+    fi
+
+    echo "  ✓ All ${success_count} modules downloaded and verified"
+    return 0
+}
+
+# Download modules sequentially (fallback method)
+_download_modules_sequential() {
+    local temp_lib_dir="$1"
+    local github_repo="$2"
+    shift 2
+    local modules=("$@")
+
+    local total="${#modules[@]}"
+    local current=0
+
+    echo "  Downloading ${total} modules sequentially..."
+
+    for module in "${modules[@]}"; do
+        ((current++))
+        local module_file="${temp_lib_dir}/${module}.sh"
+        local module_url="${github_repo}/lib/${module}.sh"
+
+        printf "  [%d/%d] Downloading %s..." "$current" "$total" "${module}.sh"
+
+        # Download
+        if command -v curl >/dev/null 2>&1; then
+            if ! curl -fsSL --connect-timeout 10 --max-time 30 "${module_url}" -o "${module_file}" 2>/dev/null; then
+                echo " ✗ FAILED"
+                rm -rf "${temp_lib_dir}"
+                _show_download_error_help "${module}" "${module_url}"
+                exit 1
+            fi
+        elif command -v wget >/dev/null 2>&1; then
+            if ! wget -q --timeout=30 "${module_url}" -O "${module_file}" 2>/dev/null; then
+                echo " ✗ FAILED"
+                rm -rf "${temp_lib_dir}"
+                _show_download_error_help "${module}" "${module_url}"
+                exit 1
+            fi
+        else
+            echo " ✗ NO DOWNLOADER"
+            rm -rf "${temp_lib_dir}"
+            _show_no_downloader_error
+            exit 1
+        fi
+
+        # Verify
+        local file_size
+        file_size=$(stat -c%s "${module_file}" 2>/dev/null || stat -f%z "${module_file}" 2>/dev/null || echo "0")
+
+        if [[ ! -f "${module_file}" ]] || [[ "${file_size}" -lt 100 ]]; then
+            echo " ✗ VERIFY FAILED"
+            rm -rf "${temp_lib_dir}"
+            _show_verification_error "${module}" "${file_size}"
+            exit 1
+        fi
+
+        if ! bash -n "${module_file}" 2>/dev/null; then
+            echo " ✗ SYNTAX ERROR"
+            rm -rf "${temp_lib_dir}"
+            _show_syntax_error "${module}"
+            exit 1
+        fi
+
+        echo " ✓ (${file_size} bytes)"
+    done
+
+    echo "  ✓ All ${total} modules downloaded and verified"
+    return 0
+}
+
+# Show download error help
+_show_download_error_help() {
+    local module="$1"
+    local url="$2"
+    echo ""
+    echo "ERROR: Failed to download module: ${module}.sh"
+    echo "URL: ${url}"
+    echo ""
+    echo "Possible causes:"
+    echo "  1. Network connectivity issues"
+    echo "  2. GitHub rate limiting (try again in a few minutes)"
+    echo "  3. Repository branch/tag does not exist"
+    echo "  4. Firewall blocking GitHub access"
+    echo ""
+    echo "Troubleshooting:"
+    echo "  • Test connectivity: curl -I https://github.com"
+    echo "  • Use git clone instead:"
+    echo "    git clone https://github.com/Joe-oss9527/sbx-lite.git"
+    echo "    cd sbx-lite && bash install_multi.sh"
+    echo ""
+}
+
+# Show no downloader error
+_show_no_downloader_error() {
+    echo ""
+    echo "ERROR: Neither curl nor wget is available"
+    echo "Please install one of the following:"
+    echo "  • curl: apt-get install curl  (Debian/Ubuntu)"
+    echo "  • wget: apt-get install wget  (Debian/Ubuntu)"
+    echo "  • curl: yum install curl      (CentOS/RHEL)"
+    echo "  • wget: yum install wget      (CentOS/RHEL)"
+    echo ""
+}
+
+# Show verification error
+_show_verification_error() {
+    local module="$1"
+    local file_size="$2"
+    echo ""
+    echo "ERROR: Downloaded file verification failed: ${module}.sh"
+    echo "File size: ${file_size} bytes (minimum: 100 bytes)"
+    echo ""
+    echo "This usually indicates:"
+    echo "  1. Network error during download (partial file)"
+    echo "  2. GitHub returned an error page instead of the file"
+    echo "  3. Rate limiting or authentication issues"
+    echo ""
+    echo "Please try again in a few minutes or use git clone method."
+    echo ""
+}
+
+# Show syntax error
+_show_syntax_error() {
+    local module="$1"
+    echo ""
+    echo "ERROR: Invalid bash syntax in downloaded file: ${module}.sh"
+    echo ""
+    echo "This may indicate:"
+    echo "  1. Corrupted download (network issue)"
+    echo "  2. Partial/incomplete download"
+    echo "  3. Potential security issue (MITM attack)"
+    echo ""
+    echo "For security, the installation has been aborted."
+    echo "Please try again or use the git clone method."
+    echo ""
+}
+
+#==============================================================================
+# Smart Module Loader
+#==============================================================================
+
 # Smart module loader: downloads modules if not present (for one-liner install)
 _load_modules() {
     local github_repo="https://raw.githubusercontent.com/Joe-oss9527/sbx-lite/main"
@@ -38,124 +290,18 @@ _load_modules() {
         }
         chmod 700 "${temp_lib_dir}"
 
-        # Download each module
-        for module in "${modules[@]}"; do
-            local module_file="${temp_lib_dir}/${module}.sh"
-            local module_url="${github_repo}/lib/${module}.sh"
+        # Determine download strategy: parallel or sequential
+        local use_parallel=1
+        if [[ "${ENABLE_PARALLEL_DOWNLOAD:-1}" == "0" ]]; then
+            use_parallel=0
+        fi
 
-            echo "  Downloading ${module}.sh..."
-            if command -v curl >/dev/null 2>&1; then
-                if ! curl -fsSL --connect-timeout 10 --max-time 30 "${module_url}" -o "${module_file}"; then
-                    rm -rf "${temp_lib_dir}"
-                    echo ""
-                    echo "ERROR: Failed to download module: ${module}.sh"
-                    echo "URL: ${module_url}"
-                    echo ""
-                    echo "Possible causes:"
-                    echo "  1. Network connectivity issues"
-                    echo "  2. GitHub rate limiting (try again in a few minutes)"
-                    echo "  3. Repository branch/tag does not exist"
-                    echo "  4. Firewall blocking GitHub access"
-                    echo ""
-                    echo "Troubleshooting:"
-                    echo "  • Test connectivity: curl -I https://github.com"
-                    echo "  • Use git clone instead:"
-                    echo "    git clone https://github.com/Joe-oss9527/sbx-lite.git"
-                    echo "    cd sbx-lite && bash install_multi.sh"
-                    echo ""
-                    exit 1
-                fi
-            elif command -v wget >/dev/null 2>&1; then
-                if ! wget -q --timeout=30 "${module_url}" -O "${module_file}"; then
-                    rm -rf "${temp_lib_dir}"
-                    echo ""
-                    echo "ERROR: Failed to download module: ${module}.sh"
-                    echo "URL: ${module_url}"
-                    echo ""
-                    echo "Possible causes:"
-                    echo "  1. Network connectivity issues"
-                    echo "  2. GitHub rate limiting (try again in a few minutes)"
-                    echo "  3. Repository branch/tag does not exist"
-                    echo "  4. Firewall blocking GitHub access"
-                    echo ""
-                    echo "Troubleshooting:"
-                    echo "  • Test connectivity: wget --spider https://github.com"
-                    echo "  • Use git clone instead:"
-                    echo "    git clone https://github.com/Joe-oss9527/sbx-lite.git"
-                    echo "    cd sbx-lite && bash install_multi.sh"
-                    echo ""
-                    exit 1
-                fi
-            else
-                rm -rf "${temp_lib_dir}"
-                echo ""
-                echo "ERROR: Neither curl nor wget is available"
-                echo "Please install one of the following:"
-                echo "  • curl: apt-get install curl  (Debian/Ubuntu)"
-                echo "  • wget: apt-get install wget  (Debian/Ubuntu)"
-                echo "  • curl: yum install curl      (CentOS/RHEL)"
-                echo "  • wget: yum install wget      (CentOS/RHEL)"
-                echo ""
-                exit 1
-            fi
-
-            # Verify downloaded module (basic integrity checks)
-            echo "  Verifying ${module}.sh..."
-
-            # 1. Check file exists
-            if [[ ! -f "${module_file}" ]]; then
-                rm -rf "${temp_lib_dir}"
-                echo ""
-                echo "ERROR: Downloaded file not found: ${module}.sh"
-                echo "This is an unexpected error. Please report this issue."
-                echo ""
-                exit 1
-            fi
-
-            # 2. Check minimum file size (prevent empty files or error pages)
-            local file_size
-            file_size=$(stat -c%s "${module_file}" 2>/dev/null || stat -f%z "${module_file}" 2>/dev/null || echo "0")
-            if [[ "${file_size}" -lt 100 ]]; then
-                rm -rf "${temp_lib_dir}"
-                echo ""
-                echo "ERROR: Downloaded file too small: ${module}.sh (${file_size} bytes)"
-                echo ""
-                echo "This usually indicates:"
-                echo "  1. Network error during download (partial file)"
-                echo "  2. GitHub returned an error page instead of the file"
-                echo "  3. Rate limiting or authentication issues"
-                echo ""
-                echo "Please try again in a few minutes or use git clone method."
-                echo ""
-                exit 1
-            fi
-
-            # 3. Validate bash syntax (prevent corrupted or malicious files)
-            if ! bash -n "${module_file}" 2>/dev/null; then
-                rm -rf "${temp_lib_dir}"
-                echo ""
-                echo "ERROR: Invalid bash syntax in downloaded file: ${module}.sh"
-                echo ""
-                echo "This may indicate:"
-                echo "  1. Corrupted download (network issue)"
-                echo "  2. Partial/incomplete download"
-                echo "  3. Potential security issue (MITM attack)"
-                echo ""
-                echo "For security, the installation has been aborted."
-                echo "Please try again or use the git clone method."
-                echo ""
-                exit 1
-            fi
-
-            # 4. Check for module header (version compatibility check)
-            if ! grep -q "^# lib/${module}.sh" "${module_file}" 2>/dev/null; then
-                echo "  Warning: Module header not found in ${module}.sh (may indicate version mismatch)"
-            fi
-
-            echo "  ✓ ${module}.sh verified (${file_size} bytes)"
-        done
-
-        echo "[✓] All modules downloaded successfully"
+        # Download modules (parallel or sequential based on capability)
+        if [[ $use_parallel -eq 1 ]] && command -v xargs >/dev/null 2>&1; then
+            _download_modules_parallel "${temp_lib_dir}" "${github_repo}" "${modules[@]}"
+        else
+            _download_modules_sequential "${temp_lib_dir}" "${github_repo}" "${modules[@]}"
+        fi
 
         # Create proper directory structure
         local parent_dir
