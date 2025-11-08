@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Core Reference**:
 - [Development Commands](#development-commands) - Testing, validation, management commands
-- [Modular Architecture](#modular-architecture-v20) - 9 library modules structure
+- [Modular Architecture](#modular-architecture-v20) - 11 library modules structure
 - [Critical Implementation Details](#critical-implementation-details) - Security rules, patterns, compliance
 
 **Configuration**:
@@ -23,10 +23,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is **sbx-lite**, a one-click bash deployment script for official sing-box proxy server. The project features a **modular architecture (v2.0)** with 9 specialized library modules and a streamlined main installer (`install_multi.sh`) that supports three protocols: VLESS-REALITY (default), VLESS-WS-TLS (optional), and Hysteria2 (optional).
+This is **sbx-lite**, a one-click bash deployment script for official sing-box proxy server. The project features a **modular architecture (v2.0)** with 11 specialized library modules and a streamlined main installer (`install_multi.sh`) that supports three protocols: VLESS-REALITY (default), VLESS-WS-TLS (optional), and Hysteria2 (optional).
 
 ### Architecture Highlights
-- **Modular Design**: 9 focused library modules (3,153 lines) in `lib/` directory
+- **Modular Design**: 11 focused library modules (3,523 lines) in `lib/` directory
 - **Streamlined Installer**: Main script reduced from 2,294 to ~500 lines
 - **Enhanced Features**: Backup/restore, multi-client export, CI/CD integration
 - **Production-Grade**: ShellCheck validation, automated testing, comprehensive error handling
@@ -137,14 +137,23 @@ The project follows a clean modular architecture with clear separation of concer
    - `validate_env_vars()` - Environment variable validation
    - `validate_menu_choice()`, `validate_yes_no()` - User input validation
 
-4. **lib/certificate.sh** (102 lines) - Caddy-based certificate management
+4. **lib/checksum.sh** (200 lines) - SHA256 binary verification ⭐ NEW
+   - `verify_file_checksum()` - Generic file SHA256 verification
+   - `verify_singbox_binary()` - sing-box specific binary verification
+   - Downloads official `.sha256sum` files from GitHub releases
+   - Supports both `sha256sum` and `shasum` tools
+   - Case-insensitive checksum comparison
+   - Graceful degradation when checksums unavailable
+   - Fatal error on verification failure to prevent compromised installations
+
+5. **lib/certificate.sh** (102 lines) - Caddy-based certificate management
    - `maybe_issue_cert()` - Automatic certificate issuance via Caddy
    - `check_cert_expiry()` - Certificate expiration checking
    - Automatic certificate mode detection for domains
    - Certificate-key compatibility verification
    - Integration with Caddy for Let's Encrypt certificates
 
-4.5. **lib/caddy.sh** (429 lines) - Caddy automatic TLS management
+6. **lib/caddy.sh** (429 lines) - Caddy automatic TLS management
    - `caddy_install()` - Install/upgrade Caddy binary from GitHub
    - `caddy_setup_auto_tls()` - Configure Caddy for automatic HTTPS
    - `caddy_setup_cert_sync()` - Sync certificates from Caddy to sing-box
@@ -155,7 +164,7 @@ The project follows a clean modular architecture with clear separation of concer
    - Systemd service integration with automatic startup
    - Daily certificate sync via systemd timer
 
-5. **lib/config.sh** (330 lines) - sing-box configuration generation
+7. **lib/config.sh** (330 lines) - sing-box configuration generation
    - `create_base_config()` - Base configuration with DNS settings
    - `create_reality_inbound()` - VLESS-REALITY inbound configuration
    - `create_ws_inbound()` - VLESS-WS-TLS inbound configuration
@@ -165,7 +174,7 @@ The project follows a clean modular architecture with clear separation of concer
    - `write_config()` - Complete JSON generation with jq
    - Atomic configuration writes with validation
 
-6. **lib/service.sh** (230 lines) - systemd service management
+8. **lib/service.sh** (230 lines) - systemd service management
    - `create_service_file()` - Generate systemd unit file
    - `setup_service()` - Install and start service with validation
    - `validate_port_listening()` - Port verification with retries
@@ -174,7 +183,7 @@ The project follows a clean modular architecture with clear separation of concer
    - `remove_service()` - Clean service uninstallation
    - `show_service_logs()` - Log viewing utilities
 
-7. **lib/ui.sh** (310 lines) - User interface and interaction
+9. **lib/ui.sh** (310 lines) - User interface and interaction
    - `show_logo()`, `show_sbx_logo()` - ASCII art banners
    - `show_existing_installation_menu()` - Interactive upgrade menu
    - `prompt_menu_choice()`, `prompt_yes_no()` - User prompts with validation
@@ -183,7 +192,7 @@ The project follows a clean modular architecture with clear separation of concer
    - `show_config_summary()`, `show_installation_summary()` - Information display
    - `show_error()` - Error display with context and suggestions
 
-8. **lib/backup.sh** (291 lines) - Backup and restore functionality
+10. **lib/backup.sh** (291 lines) - Backup and restore functionality
    - `backup_create()` - Create backups with optional AES-256 encryption
    - `backup_restore()` - Restore from encrypted/unencrypted backups
    - `backup_list()` - List all available backups with details
@@ -191,7 +200,7 @@ The project follows a clean modular architecture with clear separation of concer
    - PBKDF2 key derivation for encryption
    - Integrity verification on restore
 
-9. **lib/export.sh** (345 lines) - Client configuration export
+11. **lib/export.sh** (345 lines) - Client configuration export
    - `export_v2rayn_json()` - v2rayN/v2rayNG JSON format
    - `export_nekoray_json()` - NekoRay JSON format
    - `export_clash_yaml()` - Clash/Clash Meta YAML format
@@ -206,7 +215,7 @@ The project follows a clean modular architecture with clear separation of concer
   - **Smart module loading** with automatic download for one-liner installations
   - `_load_modules()` function (lines 23-96): Intelligent module detection and auto-download
     - Detects missing `lib/` directory for remote installations
-    - Downloads 10 modules from GitHub to temporary directory
+    - Downloads 11 modules from GitHub to temporary directory
     - Supports both curl and wget with timeout protection
     - Secure temporary file handling with automatic cleanup
   - Installation flow coordination
@@ -214,6 +223,7 @@ The project follows a clean modular architecture with clear separation of concer
   - Uninstallation flow
   - Preserved backward compatibility
   - **Deployment flexibility**: Works both locally (development) and remotely (production)
+  - **Module list**: common, retry, download, network, validation, **checksum**, certificate, caddy, config, service, ui, backup, export
 
 - **bin/sbx-manager.sh** (357 lines) - Enhanced management tool
   - Service management commands
@@ -374,6 +384,36 @@ export -f msg warn err success die
   - **IP addresses supported**: `DOMAIN=1.2.3.4` enables Reality-only mode
   - **Domains enable full mode**: Can add WS-TLS and Hysteria2 with certificates
 
+### Version Management (Optional) ⭐ NEW
+- **Version Selection**:
+  - `SINGBOX_VERSION=stable` - Latest stable release (default, no pre-releases)
+  - `SINGBOX_VERSION=latest` - Absolute latest release (including beta/alpha)
+  - `SINGBOX_VERSION=v1.10.7` - Specific version with 'v' prefix
+  - `SINGBOX_VERSION=1.10.7` - Specific version (auto-prefixed with 'v')
+  - `SINGBOX_VERSION=v1.11.0-beta.1` - Pre-release version
+- **Default**: Uses `stable` if not specified
+- **Case Insensitive**: `STABLE`, `LATEST`, `stable`, `latest` all work
+- **GitHub Token** (optional): `GITHUB_TOKEN=ghp_xxx` for higher API rate limits
+
+**Examples**:
+```bash
+# Latest stable (default)
+bash install_multi.sh
+
+# Explicit stable
+SINGBOX_VERSION=stable bash install_multi.sh
+
+# Latest including pre-releases
+SINGBOX_VERSION=latest bash install_multi.sh
+
+# Specific version
+SINGBOX_VERSION=v1.10.7 bash install_multi.sh
+SINGBOX_VERSION=1.10.7 bash install_multi.sh  # Auto-prefixed
+
+# Pre-release
+SINGBOX_VERSION=v1.11.0-beta.1 bash install_multi.sh
+```
+
 ### Certificate Configuration
 - **Automatic Mode** (default when domain is provided): Uses Caddy for Let's Encrypt HTTP-01 challenge
 - `CERT_MODE=caddy` - Explicitly use Caddy for automatic TLS (default for domain-based installations)
@@ -388,6 +428,15 @@ export -f msg warn err success die
   - `CADDY_HTTP_PORT=80` (default) - HTTP and ACME HTTP-01 challenge
   - `CADDY_HTTPS_PORT=8445` (default) - HTTPS certificate management only
   - `CADDY_FALLBACK_PORT=8080` (default) - Fallback handler
+
+### Security Configuration (Optional)
+- **Binary Verification**:
+  - `SKIP_CHECKSUM=1` - Skip SHA256 checksum verification (NOT recommended)
+  - **Default**: Checksum verification enabled automatically
+  - **Security**: Downloads official `.sha256sum` files from GitHub releases
+  - **Tools**: Supports both `sha256sum` and `shasum` utilities
+  - **Behavior**: Gracefully degrades if checksum files unavailable (with warning)
+  - **Fatal on mismatch**: Installation aborts if checksums don't match
 
 ## Critical Implementation Details
 

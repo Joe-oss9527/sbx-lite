@@ -276,7 +276,7 @@ _show_syntax_error() {
 _load_modules() {
     local github_repo="https://raw.githubusercontent.com/Joe-oss9527/sbx-lite/main"
     # Module loading order: common must be first, retry before download
-    local modules=(common retry download network validation certificate caddy config service ui backup export)
+    local modules=(common retry download network validation checksum version certificate caddy config service ui backup export)
     local temp_lib_dir=""
 
     # Check if lib directory exists
@@ -349,6 +349,8 @@ _verify_module_apis() {
         ["download"]="download_file download_file_with_retry verify_downloaded_file"
         ["network"]="get_public_ip allocate_port detect_ipv6_support"
         ["validation"]="validate_domain validate_ip_address sanitize_input"
+        ["checksum"]="verify_file_checksum verify_singbox_binary"
+        ["version"]="resolve_singbox_version"
         ["config"]="write_config create_reality_inbound add_route_config"
         ["service"]="setup_service validate_port_listening restart_service"
     )
@@ -635,23 +637,21 @@ download_singbox() {
     tmp="$(mktemp -d)" || die "Failed to create temporary directory"
     chmod 700 "$tmp"
 
-    # Get release information
-    if [[ -n "${SINGBOX_VERSION:-}" ]]; then
-        tag="$SINGBOX_VERSION"
-        api="https://api.github.com/repos/SagerNet/sing-box/releases/tags/${tag}"
-    else
-        api="https://api.github.com/repos/SagerNet/sing-box/releases/latest"
-    fi
+    # Resolve version using modular version resolver
+    # Supports: stable (default), latest, vX.Y.Z, X.Y.Z
+    tag=$(resolve_singbox_version) || {
+        rm -rf "$tmp"
+        die "Failed to resolve sing-box version"
+    }
 
-    msg "Fetching sing-box release info for $arch..."
+    # Get release information for the resolved version
+    api="https://api.github.com/repos/SagerNet/sing-box/releases/tags/${tag}"
+
+    msg "Fetching sing-box ${tag} release info for $arch..."
     raw=$(safe_http_get "$api") || {
         rm -rf "$tmp"
         die "Failed to fetch release information from GitHub"
     }
-
-    if [[ -z "${SINGBOX_VERSION:-}" ]]; then
-        tag=$(echo "$raw" | grep '"tag_name":' | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')
-    fi
 
     # Extract download URL (explicitly match linux-${arch}.tar.gz to avoid android builds)
     url=$(echo "$raw" | grep '"browser_download_url":' | grep -E "linux-${arch}\.tar\.gz\"" | head -1 | cut -d'"' -f4)
@@ -669,52 +669,16 @@ download_singbox() {
     }
 
     # ==================== SHA256 Checksum Verification ====================
-    msg "Verifying package integrity..."
-
-    # Download checksum file from GitHub
-    local checksum_url="${url}.sha256sum"
-    local checksum_file="$tmp/checksum.txt"
-
-    if safe_http_get "$checksum_url" "$checksum_file" 2>/dev/null; then
-        # Extract expected SHA256 hash (first field in checksum file)
-        local expected_sum
-        expected_sum=$(awk '{print $1}' "$checksum_file" | head -1)
-
-        if [[ -z "$expected_sum" ]]; then
-            warn "  ⚠ Checksum file is empty or invalid, skipping verification"
-        elif [[ ! "$expected_sum" =~ ^[0-9a-fA-F]{64}$ ]]; then
-            warn "  ⚠ Invalid checksum format: $expected_sum"
-            warn "  ⚠ Skipping verification"
-        else
-            # Calculate actual SHA256 of downloaded package
-            local actual_sum
-            if have sha256sum; then
-                actual_sum=$(sha256sum "$pkg" | awk '{print $1}')
-            elif have shasum; then
-                actual_sum=$(shasum -a 256 "$pkg" | awk '{print $1}')
-            else
-                warn "  ⚠ No SHA256 tool available (sha256sum/shasum)"
-                warn "  ⚠ Skipping checksum verification"
-                actual_sum=""
-            fi
-
-            if [[ -n "$actual_sum" ]]; then
-                # Compare checksums (case-insensitive)
-                if [[ "${expected_sum,,}" == "${actual_sum,,}" ]]; then
-                    success "  ✓ Package integrity verified (SHA256 match)"
-                else
-                    rm -rf "$tmp"
-                    err "SHA256 checksum verification FAILED!"
-                    err "  Expected: $expected_sum"
-                    err "  Actual:   $actual_sum"
-                    die "Package may be corrupted or tampered. Aborting for security."
-                fi
-            fi
+    # Use modular checksum verification from lib/checksum.sh
+    # Skip verification if SKIP_CHECKSUM environment variable is set
+    if [[ "${SKIP_CHECKSUM:-0}" != "1" ]]; then
+        if ! verify_singbox_binary "$pkg" "$tag" "linux-${arch}"; then
+            rm -rf "$tmp"
+            die "Binary verification failed, aborting installation"
         fi
     else
-        warn "  ⚠ Checksum file not available from GitHub"
-        warn "  ⚠ URL: $checksum_url"
-        warn "  ⚠ Proceeding without verification (use at your own risk)"
+        warn "⚠ SKIP_CHECKSUM is set, bypassing SHA256 verification"
+        warn "⚠ This is NOT recommended for production use"
     fi
     # ==================== Checksum Verification End ====================
 
