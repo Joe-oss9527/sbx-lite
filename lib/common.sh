@@ -44,6 +44,25 @@ declare -r CLEANUP_OLD_FILES_MIN=60
 declare -r BACKUP_RETENTION_DAYS=30
 declare -r CADDY_CERT_WAIT_TIMEOUT_SEC=60
 
+# Download configuration
+declare -r DOWNLOAD_CONNECT_TIMEOUT_SEC=10
+declare -r DOWNLOAD_MAX_TIMEOUT_SEC=30
+declare -r HTTP_TIMEOUT_SEC=30
+declare -r MIN_MODULE_FILE_SIZE_BYTES=100
+declare -r DEFAULT_PARALLEL_JOBS=5
+
+# File permissions (octal)
+declare -r SECURE_DIR_PERMISSIONS=700
+declare -r SECURE_FILE_PERMISSIONS=600
+
+# Input validation limits
+declare -r MAX_INPUT_LENGTH=256
+declare -r MAX_DOMAIN_LENGTH=253
+
+# Service operation wait times
+declare -r SERVICE_WAIT_SHORT_SEC=1
+declare -r SERVICE_WAIT_MEDIUM_SEC=2
+
 #==============================================================================
 # Global Variables (from environment)
 #==============================================================================
