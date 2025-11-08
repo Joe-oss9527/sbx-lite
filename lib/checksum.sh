@@ -152,7 +152,7 @@ verify_singbox_binary() {
     }
 
     # Ensure cleanup
-    trap "rm -f '$checksum_file'" RETURN
+    trap 'rm -f "$checksum_file"' RETURN
 
     # Download checksum file
     if ! safe_http_get "$checksum_url" "$checksum_file" 2>/dev/null; then
