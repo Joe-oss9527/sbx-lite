@@ -2,6 +2,9 @@
 # lib/certificate.sh - Caddy-based certificate management
 # Part of sbx-lite modular architecture
 
+# Strict mode for error handling and safety
+set -euo pipefail
+
 # Prevent multiple sourcing
 [[ -n "${_SBX_CERTIFICATE_LOADED:-}" ]] && return 0
 readonly _SBX_CERTIFICATE_LOADED=1

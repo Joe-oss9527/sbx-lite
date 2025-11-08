@@ -2,6 +2,9 @@
 # lib/network.sh - Network detection and port management
 # Part of sbx-lite modular architecture
 
+# Strict mode for error handling and safety
+set -euo pipefail
+
 # Prevent multiple sourcing
 [[ -n "${_SBX_NETWORK_LOADED:-}" ]] && return 0
 readonly _SBX_NETWORK_LOADED=1

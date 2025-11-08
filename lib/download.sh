@@ -3,6 +3,9 @@
 # Part of sbx-lite modular architecture
 # Based on Rustup downloader patterns and OWASP security practices
 
+# Strict mode for error handling and safety
+set -euo pipefail
+
 # Prevent multiple sourcing
 [[ -n "${_SBX_DOWNLOAD_LOADED:-}" ]] && return 0
 readonly _SBX_DOWNLOAD_LOADED=1

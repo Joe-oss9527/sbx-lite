@@ -2,6 +2,9 @@
 # lib/config.sh - sing-box configuration generation
 # Part of sbx-lite modular architecture
 
+# Strict mode for error handling and safety
+set -euo pipefail
+
 # Prevent multiple sourcing
 [[ -n "${_SBX_CONFIG_LOADED:-}" ]] && return 0
 readonly _SBX_CONFIG_LOADED=1

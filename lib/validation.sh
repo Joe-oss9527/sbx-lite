@@ -2,6 +2,9 @@
 # lib/validation.sh - Input validation and security checks
 # Part of sbx-lite modular architecture
 
+# Strict mode for error handling and safety
+set -euo pipefail
+
 # Prevent multiple sourcing
 [[ -n "${_SBX_VALIDATION_LOADED:-}" ]] && return 0
 readonly _SBX_VALIDATION_LOADED=1

@@ -2,6 +2,9 @@
 # lib/backup.sh - Backup and restore functionality
 # Part of sbx-lite modular architecture
 
+# Strict mode for error handling and safety
+set -euo pipefail
+
 # Prevent multiple sourcing
 [[ -n "${_SBX_BACKUP_LOADED:-}" ]] && return 0
 readonly _SBX_BACKUP_LOADED=1

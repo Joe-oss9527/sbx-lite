@@ -7,6 +7,9 @@
 # Functions:
 #   - resolve_singbox_version: Resolve version alias to actual version tag
 
+# Strict mode for error handling and safety
+set -euo pipefail
+
 [[ -n "${_SBX_VERSION_LOADED:-}" ]] && return 0
 readonly _SBX_VERSION_LOADED=1
 

@@ -2,6 +2,9 @@
 # lib/service.sh - systemd service management
 # Part of sbx-lite modular architecture
 
+# Strict mode for error handling and safety
+set -euo pipefail
+
 # Prevent multiple sourcing
 [[ -n "${_SBX_SERVICE_LOADED:-}" ]] && return 0
 readonly _SBX_SERVICE_LOADED=1

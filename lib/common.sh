@@ -2,6 +2,9 @@
 # lib/common.sh - Common utilities, global variables, and logging functions
 # Part of sbx-lite modular architecture
 
+# Strict mode for error handling and safety
+set -euo pipefail
+
 # Prevent multiple sourcing
 [[ -n "${_SBX_COMMON_LOADED:-}" ]] && return 0
 readonly _SBX_COMMON_LOADED=1
