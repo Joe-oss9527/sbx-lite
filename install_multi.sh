@@ -276,7 +276,7 @@ _show_syntax_error() {
 _load_modules() {
     local github_repo="https://raw.githubusercontent.com/Joe-oss9527/sbx-lite/main"
     # Module loading order: common must be first, retry before download
-    local modules=(common retry download network validation checksum certificate caddy config service ui backup export)
+    local modules=(common retry download network validation checksum version certificate caddy config service ui backup export)
     local temp_lib_dir=""
 
     # Check if lib directory exists
@@ -350,6 +350,7 @@ _verify_module_apis() {
         ["network"]="get_public_ip allocate_port detect_ipv6_support"
         ["validation"]="validate_domain validate_ip_address sanitize_input"
         ["checksum"]="verify_file_checksum verify_singbox_binary"
+        ["version"]="resolve_singbox_version"
         ["config"]="write_config create_reality_inbound add_route_config"
         ["service"]="setup_service validate_port_listening restart_service"
     )
@@ -636,23 +637,21 @@ download_singbox() {
     tmp="$(mktemp -d)" || die "Failed to create temporary directory"
     chmod 700 "$tmp"
 
-    # Get release information
-    if [[ -n "${SINGBOX_VERSION:-}" ]]; then
-        tag="$SINGBOX_VERSION"
-        api="https://api.github.com/repos/SagerNet/sing-box/releases/tags/${tag}"
-    else
-        api="https://api.github.com/repos/SagerNet/sing-box/releases/latest"
-    fi
+    # Resolve version using modular version resolver
+    # Supports: stable (default), latest, vX.Y.Z, X.Y.Z
+    tag=$(resolve_singbox_version) || {
+        rm -rf "$tmp"
+        die "Failed to resolve sing-box version"
+    }
 
-    msg "Fetching sing-box release info for $arch..."
+    # Get release information for the resolved version
+    api="https://api.github.com/repos/SagerNet/sing-box/releases/tags/${tag}"
+
+    msg "Fetching sing-box ${tag} release info for $arch..."
     raw=$(safe_http_get "$api") || {
         rm -rf "$tmp"
         die "Failed to fetch release information from GitHub"
     }
-
-    if [[ -z "${SINGBOX_VERSION:-}" ]]; then
-        tag=$(echo "$raw" | grep '"tag_name":' | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')
-    fi
 
     # Extract download URL (explicitly match linux-${arch}.tar.gz to avoid android builds)
     url=$(echo "$raw" | grep '"browser_download_url":' | grep -E "linux-${arch}\.tar\.gz\"" | head -1 | cut -d'"' -f4)

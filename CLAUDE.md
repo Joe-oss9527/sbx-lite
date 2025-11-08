@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Core Reference**:
 - [Development Commands](#development-commands) - Testing, validation, management commands
-- [Modular Architecture](#modular-architecture-v20) - 10 library modules structure
+- [Modular Architecture](#modular-architecture-v20) - 11 library modules structure
 - [Critical Implementation Details](#critical-implementation-details) - Security rules, patterns, compliance
 
 **Configuration**:
@@ -23,10 +23,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is **sbx-lite**, a one-click bash deployment script for official sing-box proxy server. The project features a **modular architecture (v2.0)** with 10 specialized library modules and a streamlined main installer (`install_multi.sh`) that supports three protocols: VLESS-REALITY (default), VLESS-WS-TLS (optional), and Hysteria2 (optional).
+This is **sbx-lite**, a one-click bash deployment script for official sing-box proxy server. The project features a **modular architecture (v2.0)** with 11 specialized library modules and a streamlined main installer (`install_multi.sh`) that supports three protocols: VLESS-REALITY (default), VLESS-WS-TLS (optional), and Hysteria2 (optional).
 
 ### Architecture Highlights
-- **Modular Design**: 10 focused library modules (3,353 lines) in `lib/` directory
+- **Modular Design**: 11 focused library modules (3,523 lines) in `lib/` directory
 - **Streamlined Installer**: Main script reduced from 2,294 to ~500 lines
 - **Enhanced Features**: Backup/restore, multi-client export, CI/CD integration
 - **Production-Grade**: ShellCheck validation, automated testing, comprehensive error handling
@@ -383,6 +383,36 @@ export -f msg warn err success die
   - **Not required for Reality-only**: Script auto-detects server IP if omitted
   - **IP addresses supported**: `DOMAIN=1.2.3.4` enables Reality-only mode
   - **Domains enable full mode**: Can add WS-TLS and Hysteria2 with certificates
+
+### Version Management (Optional) ⭐ NEW
+- **Version Selection**:
+  - `SINGBOX_VERSION=stable` - Latest stable release (default, no pre-releases)
+  - `SINGBOX_VERSION=latest` - Absolute latest release (including beta/alpha)
+  - `SINGBOX_VERSION=v1.10.7` - Specific version with 'v' prefix
+  - `SINGBOX_VERSION=1.10.7` - Specific version (auto-prefixed with 'v')
+  - `SINGBOX_VERSION=v1.11.0-beta.1` - Pre-release version
+- **Default**: Uses `stable` if not specified
+- **Case Insensitive**: `STABLE`, `LATEST`, `stable`, `latest` all work
+- **GitHub Token** (optional): `GITHUB_TOKEN=ghp_xxx` for higher API rate limits
+
+**Examples**:
+```bash
+# Latest stable (default)
+bash install_multi.sh
+
+# Explicit stable
+SINGBOX_VERSION=stable bash install_multi.sh
+
+# Latest including pre-releases
+SINGBOX_VERSION=latest bash install_multi.sh
+
+# Specific version
+SINGBOX_VERSION=v1.10.7 bash install_multi.sh
+SINGBOX_VERSION=1.10.7 bash install_multi.sh  # Auto-prefixed
+
+# Pre-release
+SINGBOX_VERSION=v1.11.0-beta.1 bash install_multi.sh
+```
 
 ### Certificate Configuration
 - **Automatic Mode** (default when domain is provided): Uses Caddy for Let's Encrypt HTTP-01 challenge
