@@ -3,6 +3,9 @@
 # Part of sbx-lite modular architecture
 # Based on xray-fusion implementation
 
+# Strict mode for error handling and safety
+set -euo pipefail
+
 # Prevent multiple sourcing
 [[ -n "${_SBX_CADDY_LOADED:-}" ]] && return 0
 readonly _SBX_CADDY_LOADED=1

@@ -2,6 +2,9 @@
 # lib/common.sh - Common utilities, global variables, and logging functions
 # Part of sbx-lite modular architecture
 
+# Strict mode for error handling and safety
+set -euo pipefail
+
 # Prevent multiple sourcing
 [[ -n "${_SBX_COMMON_LOADED:-}" ]] && return 0
 readonly _SBX_COMMON_LOADED=1
@@ -40,6 +43,23 @@ declare -r PORT_ALLOCATION_RETRY_DELAY_SEC=2
 declare -r CLEANUP_OLD_FILES_MIN=60
 declare -r BACKUP_RETENTION_DAYS=30
 declare -r CADDY_CERT_WAIT_TIMEOUT_SEC=60
+
+# Download configuration (some constants defined in install_multi.sh early boot)
+# DOWNLOAD_CONNECT_TIMEOUT_SEC, DOWNLOAD_MAX_TIMEOUT_SEC, MIN_MODULE_FILE_SIZE_BYTES
+# are defined in install_multi.sh before module loading
+[[ -z "${HTTP_TIMEOUT_SEC:-}" ]] && declare -r HTTP_TIMEOUT_SEC=30
+[[ -z "${DEFAULT_PARALLEL_JOBS:-}" ]] && declare -r DEFAULT_PARALLEL_JOBS=5
+
+# File permissions (octal) - defined in install_multi.sh for early use
+# SECURE_DIR_PERMISSIONS and SECURE_FILE_PERMISSIONS are already readonly
+
+# Input validation limits
+[[ -z "${MAX_INPUT_LENGTH:-}" ]] && declare -r MAX_INPUT_LENGTH=256
+[[ -z "${MAX_DOMAIN_LENGTH:-}" ]] && declare -r MAX_DOMAIN_LENGTH=253
+
+# Service operation wait times
+[[ -z "${SERVICE_WAIT_SHORT_SEC:-}" ]] && declare -r SERVICE_WAIT_SHORT_SEC=1
+[[ -z "${SERVICE_WAIT_MEDIUM_SEC:-}" ]] && declare -r SERVICE_WAIT_MEDIUM_SEC=2
 
 #==============================================================================
 # Global Variables (from environment)

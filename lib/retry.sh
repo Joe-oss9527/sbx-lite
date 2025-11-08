@@ -3,6 +3,9 @@
 # Part of sbx-lite modular architecture
 # Based on Google SRE best practices for resilient systems
 
+# Strict mode for error handling and safety
+set -euo pipefail
+
 # Prevent multiple sourcing
 [[ -n "${_SBX_RETRY_LOADED:-}" ]] && return 0
 readonly _SBX_RETRY_LOADED=1

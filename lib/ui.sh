@@ -2,6 +2,9 @@
 # lib/ui.sh - User interface and interaction
 # Part of sbx-lite modular architecture
 
+# Strict mode for error handling and safety
+set -euo pipefail
+
 # Prevent multiple sourcing
 [[ -n "${_SBX_UI_LOADED:-}" ]] && return 0
 readonly _SBX_UI_LOADED=1

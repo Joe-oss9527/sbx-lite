@@ -2,6 +2,9 @@
 # lib/export.sh - Client configuration export functionality
 # Part of sbx-lite modular architecture
 
+# Strict mode for error handling and safety
+set -euo pipefail
+
 # Prevent multiple sourcing
 [[ -n "${_SBX_EXPORT_LOADED:-}" ]] && return 0
 readonly _SBX_EXPORT_LOADED=1

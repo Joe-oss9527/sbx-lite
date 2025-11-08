@@ -8,6 +8,9 @@
 #   - verify_file_checksum: Verify file against checksum file
 #   - verify_singbox_binary: Download and verify sing-box binary checksum
 
+# Strict mode for error handling and safety
+set -euo pipefail
+
 [[ -n "${_SBX_CHECKSUM_LOADED:-}" ]] && return 0
 readonly _SBX_CHECKSUM_LOADED=1
 
@@ -149,7 +152,7 @@ verify_singbox_binary() {
     }
 
     # Ensure cleanup
-    trap "rm -f '$checksum_file'" RETURN
+    trap 'rm -f "$checksum_file"' RETURN
 
     # Download checksum file
     if ! safe_http_get "$checksum_url" "$checksum_file" 2>/dev/null; then

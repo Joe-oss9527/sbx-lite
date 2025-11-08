@@ -14,6 +14,19 @@
 set -euo pipefail
 
 #==============================================================================
+# Early Constants (used before module loading)
+#==============================================================================
+
+# Download configuration
+readonly DOWNLOAD_CONNECT_TIMEOUT_SEC=10
+readonly DOWNLOAD_MAX_TIMEOUT_SEC=30
+readonly MIN_MODULE_FILE_SIZE_BYTES=100
+
+# File permissions (octal)
+readonly SECURE_DIR_PERMISSIONS=700
+readonly SECURE_FILE_PERMISSIONS=600
+
+#==============================================================================
 # Module Loading with Smart Download
 #==============================================================================
 
@@ -36,12 +49,12 @@ _download_single_module() {
 
     # Download module
     if command -v curl >/dev/null 2>&1; then
-        if ! curl -fsSL --connect-timeout 10 --max-time 30 "${module_url}" -o "${module_file}" 2>&1; then
+        if ! curl -fsSL --connect-timeout "${DOWNLOAD_CONNECT_TIMEOUT_SEC}" --max-time "${DOWNLOAD_MAX_TIMEOUT_SEC}" "${module_url}" -o "${module_file}" 2>&1; then
             echo "DOWNLOAD_FAILED:${module}" >&2
             return 1
         fi
     elif command -v wget >/dev/null 2>&1; then
-        if ! wget -q --timeout=30 "${module_url}" -O "${module_file}" 2>&1; then
+        if ! wget -q --timeout="${DOWNLOAD_MAX_TIMEOUT_SEC}" "${module_url}" -O "${module_file}" 2>&1; then
             echo "DOWNLOAD_FAILED:${module}" >&2
             return 1
         fi
@@ -59,7 +72,7 @@ _download_single_module() {
     # Check file size
     local file_size
     file_size=$(stat -c%s "${module_file}" 2>/dev/null || stat -f%z "${module_file}" 2>/dev/null || echo "0")
-    if [[ "${file_size}" -lt 100 ]]; then
+    if [[ "${file_size}" -lt "${MIN_MODULE_FILE_SIZE_BYTES}" ]]; then
         echo "FILE_TOO_SMALL:${module}:${file_size}" >&2
         return 1
     fi
@@ -156,14 +169,14 @@ _download_modules_sequential() {
 
         # Download
         if command -v curl >/dev/null 2>&1; then
-            if ! curl -fsSL --connect-timeout 10 --max-time 30 "${module_url}" -o "${module_file}" 2>/dev/null; then
+            if ! curl -fsSL --connect-timeout "${DOWNLOAD_CONNECT_TIMEOUT_SEC}" --max-time "${DOWNLOAD_MAX_TIMEOUT_SEC}" "${module_url}" -o "${module_file}" 2>/dev/null; then
                 echo " ✗ FAILED"
                 rm -rf "${temp_lib_dir}"
                 _show_download_error_help "${module}" "${module_url}"
                 exit 1
             fi
         elif command -v wget >/dev/null 2>&1; then
-            if ! wget -q --timeout=30 "${module_url}" -O "${module_file}" 2>/dev/null; then
+            if ! wget -q --timeout="${DOWNLOAD_MAX_TIMEOUT_SEC}" "${module_url}" -O "${module_file}" 2>/dev/null; then
                 echo " ✗ FAILED"
                 rm -rf "${temp_lib_dir}"
                 _show_download_error_help "${module}" "${module_url}"
@@ -180,7 +193,7 @@ _download_modules_sequential() {
         local file_size
         file_size=$(stat -c%s "${module_file}" 2>/dev/null || stat -f%z "${module_file}" 2>/dev/null || echo "0")
 
-        if [[ ! -f "${module_file}" ]] || [[ "${file_size}" -lt 100 ]]; then
+        if [[ ! -f "${module_file}" ]] || [[ "${file_size}" -lt "${MIN_MODULE_FILE_SIZE_BYTES}" ]]; then
             echo " ✗ VERIFY FAILED"
             rm -rf "${temp_lib_dir}"
             _show_verification_error "${module}" "${file_size}"
@@ -241,7 +254,7 @@ _show_verification_error() {
     local file_size="$2"
     echo ""
     echo "ERROR: Downloaded file verification failed: ${module}.sh"
-    echo "File size: ${file_size} bytes (minimum: 100 bytes)"
+    echo "File size: ${file_size} bytes (minimum: ${MIN_MODULE_FILE_SIZE_BYTES} bytes)"
     echo ""
     echo "This usually indicates:"
     echo "  1. Network error during download (partial file)"
@@ -288,7 +301,7 @@ _load_modules() {
             echo "ERROR: Failed to create temporary directory"
             exit 1
         }
-        chmod 700 "${temp_lib_dir}"
+        chmod "${SECURE_DIR_PERMISSIONS}" "${temp_lib_dir}"
 
         # Determine download strategy: parallel or sequential
         local use_parallel=1
@@ -635,7 +648,7 @@ download_singbox() {
     local arch tmp api url tag raw
     arch="$(detect_arch)"
     tmp="$(mktemp -d)" || die "Failed to create temporary directory"
-    chmod 700 "$tmp"
+    chmod "${SECURE_DIR_PERMISSIONS}" "$tmp"
 
     # Resolve version using modular version resolver
     # Supports: stable (default), latest, vX.Y.Z, X.Y.Z
@@ -823,7 +836,7 @@ CERT_KEY="${CERT_KEY}"
 EOF
     fi
 
-    chmod 600 "$CLIENT_INFO"
+    chmod "${SECURE_FILE_PERMISSIONS}" "$CLIENT_INFO"
     success "  ✓ Client info saved to: $CLIENT_INFO"
 }
 

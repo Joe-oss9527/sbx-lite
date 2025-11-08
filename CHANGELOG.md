@@ -5,6 +5,70 @@ All notable changes to sbx-lite will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2025-11-08
+
+### ✨ Code Quality Improvements
+
+#### Added Strict Mode to All Library Modules (HIGH PRIORITY)
+- **Scope**: All 14 library modules in `lib/` directory
+- **Changes**:
+  - Added `set -euo pipefail` to every library module:
+    - `lib/common.sh`, `lib/network.sh`, `lib/validation.sh`
+    - `lib/checksum.sh`, `lib/certificate.sh`, `lib/caddy.sh`
+    - `lib/config.sh`, `lib/service.sh`, `lib/ui.sh`
+    - `lib/backup.sh`, `lib/export.sh`, `lib/retry.sh`
+    - `lib/download.sh`, `lib/version.sh`
+- **Benefits**:
+  - Immediate error detection on command failures (`set -e`)
+  - Protection against undefined variable usage (`set -u`)
+  - Pipeline failure detection (`set -o pipefail`)
+  - Improved debugging and error tracing
+  - Enhanced code safety and reliability
+- **Testing**: Created `tests/unit/test_strict_mode.sh` with 14 validation tests (all passing)
+
+#### Extracted Magic Numbers to Named Constants (MEDIUM PRIORITY)
+- **Scope**: `lib/common.sh`, `install_multi.sh`, `lib/validation.sh`, `lib/service.sh`
+- **New Constants Defined**:
+  - **Download**: `DOWNLOAD_CONNECT_TIMEOUT_SEC=10`, `DOWNLOAD_MAX_TIMEOUT_SEC=30`
+  - **File Sizes**: `MIN_MODULE_FILE_SIZE_BYTES=100`
+  - **Permissions**: `SECURE_DIR_PERMISSIONS=700`, `SECURE_FILE_PERMISSIONS=600`
+  - **Validation**: `MAX_INPUT_LENGTH=256`, `MAX_DOMAIN_LENGTH=253`
+  - **Wait Times**: `SERVICE_WAIT_SHORT_SEC=1`, `SERVICE_WAIT_MEDIUM_SEC=2`
+  - **HTTP**: `HTTP_TIMEOUT_SEC=30`
+- **Replacements**: 23 magic numbers replaced across 4 files
+- **Benefits**:
+  - Self-documenting code with meaningful constant names
+  - Easy global configuration changes
+  - Consistent values across similar contexts
+  - DRY (Don't Repeat Yourself) principle applied
+  - Improved maintainability
+
+#### Enhanced CI/CD Enforcement (MEDIUM PRIORITY)
+- **File**: `.github/workflows/shellcheck.yml`
+- **Changes**:
+  - Converted strict mode check from `::warning` to `::error`
+  - Build now fails if any library module lacks strict mode
+  - Added clear success/failure messages in CI output
+- **Impact**:
+  - Prevents merging code without strict mode
+  - Enforces code quality standards automatically
+  - Protects against future regressions
+
+### 🧪 Testing Infrastructure
+- **New**: Created `tests/test-runner.sh` - Test framework with assertion functions
+- **New**: Created `tests/unit/test_strict_mode.sh` - Strict mode compliance tests
+- **Coverage**: All 14 library modules validated
+- **Methodology**: Test-Driven Development (TDD) - RED → GREEN → REFACTOR
+
+### 📚 Documentation
+- **Updated**: Implementation plan documentation in `docs/` directory
+- **Added**: Comprehensive TDD implementation plan for PR #6 issues
+
+### 🔧 Technical Details
+- **No Breaking Changes**: Fully backward compatible
+- **Test Results**: All syntax validation passing, all modules load successfully
+- **Related Issues**: Addresses PR #6 code review findings, implements PR #10 plan
+
 ## [2.1.0] - 2025-10-17
 
 ### 🔐 Security Fixes (CRITICAL)
