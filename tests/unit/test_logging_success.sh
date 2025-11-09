@@ -140,9 +140,9 @@ test_port_allocation_logs_success() {
         source lib/common.sh
         source lib/network.sh
 
-        # Test allocate_port logs success
+        # Test allocate_port logs success (need all 3 params)
         # We need to check stderr for success messages
-        allocate_port 9999 "test-service" 2>&1 >&1
+        allocate_port 9999 9998 "test-service" 2>&1
     ' 2>&1 || true)
 
     # Check if output contains success confirmation

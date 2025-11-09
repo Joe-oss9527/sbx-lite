@@ -175,14 +175,14 @@ test_log_level_filtering() {
     assert_contains "default level allows warn" "$output" "[!]"
     assert_contains "default level allows err" "$output" "[ERR]"
 
-    # Test 2: LOG_LEVEL=ERROR should only show errors
-    output=$(LOG_LEVEL=ERROR bash -c 'source lib/common.sh; msg "info"; warn "warning"; err "error" 2>&1' 2>&1)
+    # Test 2: LOG_LEVEL_FILTER=ERROR should only show errors
+    output=$(LOG_LEVEL_FILTER=ERROR bash -c 'source lib/common.sh; msg "info"; warn "warning"; err "error" 2>&1' 2>&1)
     assert_not_contains "ERROR level filters msg" "$output" "info"
     assert_not_contains "ERROR level filters warn" "$output" "warning"
     assert_contains "ERROR level shows err" "$output" "error"
 
-    # Test 3: LOG_LEVEL=WARN should show warn and error
-    output=$(LOG_LEVEL=WARN bash -c 'source lib/common.sh; msg "info"; warn "warning"; err "error" 2>&1' 2>&1)
+    # Test 3: LOG_LEVEL_FILTER=WARN should show warn and error
+    output=$(LOG_LEVEL_FILTER=WARN bash -c 'source lib/common.sh; msg "info"; warn "warning"; err "error" 2>&1' 2>&1)
     assert_not_contains "WARN level filters msg" "$output" "info"
     assert_contains "WARN level shows warn" "$output" "warning"
     assert_contains "WARN level shows err" "$output" "error"

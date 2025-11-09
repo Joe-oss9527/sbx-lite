@@ -446,14 +446,17 @@ _load_modules
 
 # Detect system architecture
 detect_arch() {
-    local arch
+    local arch detected_arch
     arch="$(uname -m)"
     case "$arch" in
-        x86_64|amd64) echo "amd64" ;;
-        aarch64|arm64) echo "arm64" ;;
-        armv7l) echo "armv7" ;;
+        x86_64|amd64) detected_arch="amd64" ;;
+        aarch64|arm64) detected_arch="arm64" ;;
+        armv7l) detected_arch="armv7" ;;
         *) die "Unsupported architecture: $arch" ;;
     esac
+
+    msg "Detected system architecture: $detected_arch (uname: $arch)"
+    echo "$detected_arch"
 }
 
 # Get installed sing-box version
