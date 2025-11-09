@@ -173,20 +173,20 @@ _download_modules_sequential() {
                 echo " ✗ FAILED"
                 rm -rf "${temp_lib_dir}"
                 _show_download_error_help "${module}" "${module_url}"
-                exit 1
+                return 1
             fi
         elif command -v wget >/dev/null 2>&1; then
             if ! wget -q --timeout="${DOWNLOAD_MAX_TIMEOUT_SEC}" "${module_url}" -O "${module_file}" 2>/dev/null; then
                 echo " ✗ FAILED"
                 rm -rf "${temp_lib_dir}"
                 _show_download_error_help "${module}" "${module_url}"
-                exit 1
+                return 1
             fi
         else
             echo " ✗ NO DOWNLOADER"
             rm -rf "${temp_lib_dir}"
             _show_no_downloader_error
-            exit 1
+            return 1
         fi
 
         # Verify
@@ -197,14 +197,14 @@ _download_modules_sequential() {
             echo " ✗ VERIFY FAILED"
             rm -rf "${temp_lib_dir}"
             _show_verification_error "${module}" "${file_size}"
-            exit 1
+            return 1
         fi
 
         if ! bash -n "${module_file}" 2>/dev/null; then
             echo " ✗ SYNTAX ERROR"
             rm -rf "${temp_lib_dir}"
             _show_syntax_error "${module}"
-            exit 1
+            return 1
         fi
 
         echo " ✓ (${file_size} bytes)"
@@ -315,10 +315,19 @@ _load_modules() {
             if ! _download_modules_parallel "${temp_lib_dir}" "${github_repo}" "${modules[@]}"; then
                 # Parallel failed, fallback to sequential
                 echo "  Retrying with sequential download..."
-                _download_modules_sequential "${temp_lib_dir}" "${github_repo}" "${modules[@]}"
+                if ! _download_modules_sequential "${temp_lib_dir}" "${github_repo}" "${modules[@]}"; then
+                    echo ""
+                    echo "ERROR: Module download failed (both parallel and sequential methods)"
+                    exit 1
+                fi
             fi
         else
-            _download_modules_sequential "${temp_lib_dir}" "${github_repo}" "${modules[@]}"
+            # Use sequential download directly
+            if ! _download_modules_sequential "${temp_lib_dir}" "${github_repo}" "${modules[@]}"; then
+                echo ""
+                echo "ERROR: Module download failed"
+                exit 1
+            fi
         fi
 
         # Create proper directory structure

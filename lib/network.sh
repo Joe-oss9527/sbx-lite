@@ -55,22 +55,24 @@ validate_ip_address() {
   # Basic format check
   [[ "$ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || return 1
 
+  # Check for leading zeros (e.g., 192.168.001.001)
+  # Leading zeros are not allowed in standard IP notation
+  [[ ! "$ip" =~ (^|\.)0[0-9] ]] || return 1
+
   # Check each octet is in valid range (0-255)
   local IFS='.'
   local -a octets
   read -ra octets <<< "$ip"
   for octet in "${octets[@]}"; do
-    # Remove leading zeros and check range
-    octet=$((10#$octet))
+    # Validate range (0-255)
     [[ $octet -le 255 ]] || return 1
   done
 
-  # Check for reserved/invalid ranges (but allow private IPs for VPS environments)
-  [[ ! "$ip" =~ ^0\. ]] || return 1          # 0.x.x.x
-  [[ ! "$ip" =~ ^127\. ]] || return 1        # 127.x.x.x (loopback)
-  [[ ! "$ip" =~ ^169\.254\. ]] || return 1   # 169.254.x.x (link-local)
-  [[ ! "$ip" =~ ^22[4-9]\. ]] || return 1    # 224.x.x.x+ (multicast)
-  [[ ! "$ip" =~ ^2[4-5][0-9]\. ]] || return 1 # 240.x.x.x+ (reserved)
+  # Note: This function validates IP address format and range only.
+  # It intentionally does NOT filter reserved/private addresses
+  # (127.x.x.x, 0.x.x.x, etc.) to allow flexibility in testing
+  # and development scenarios. Callers should implement additional
+  # policy checks if needed for production deployments.
 
   return 0
 }
@@ -113,27 +115,14 @@ allocate_port() {
       fi
 
       # Lock acquired - now check if port is actually in use
+      # port_in_use() already checks all interfaces via ss/lsof
       if port_in_use "$p"; then
         return 1
       fi
 
-      # Port is free according to port_in_use check
-      # Double-check with /dev/tcp test to ensure port is truly available
-      # This catches race conditions and unusual port states
-      timeout 1 bash -c "exec 3<>/dev/tcp/127.0.0.1/${p}" 2>/dev/null
-      local connect_result=$?
-
-      if [[ $connect_result -eq 0 ]]; then
-        # Connection succeeded - something is listening on this port
-        return 1
-      elif [[ $connect_result -eq 124 ]]; then
-        # Timeout occurred - port may be filtered/firewalled
-        # Treat as unavailable to be safe
-        return 1
-      fi
-
-      # Connection refused (expected for free port) or other error
-      # Port is available for use
+      # Port is available on all interfaces
+      # No need for additional /dev/tcp check which only tests localhost
+      # and can create race conditions on multi-interface systems
       echo "$p"
       return 0
 

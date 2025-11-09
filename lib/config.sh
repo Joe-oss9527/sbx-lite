@@ -122,6 +122,17 @@ create_reality_inbound() {
   local priv_key="$5"
   local short_id="$6"
 
+  # Input validation
+  [[ -n "$uuid" ]] || { err "UUID cannot be empty"; return 1; }
+  [[ -n "$priv_key" ]] || { err "Private key cannot be empty"; return 1; }
+  [[ -n "$short_id" ]] || { err "Short ID cannot be empty"; return 1; }
+
+  # Validate port range
+  if ! validate_port "$port" 2>/dev/null; then
+    err "Invalid port: $port (must be 1-65535)"
+    return 1
+  fi
+
   local reality_config
 
   msg "  - Creating Reality inbound configuration..."
@@ -380,7 +391,7 @@ write_config() {
   # Add Reality inbound
   local reality_config
   reality_config=$(create_reality_inbound "$UUID" "$REALITY_PORT_CHOSEN" "$listen_addr" \
-    "$SNI_DEFAULT" "$PRIV" "$SID") || \
+    "${SNI_DEFAULT:-www.microsoft.com}" "$PRIV" "$SID") || \
     die "Failed to create Reality inbound"
 
   # Add Reality inbound to base config
