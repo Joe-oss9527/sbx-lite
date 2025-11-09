@@ -206,6 +206,7 @@ test_certificate_validation_logs_success() {
     local test_cert test_key
     test_cert=$(mktemp)
     test_key=$(mktemp)
+    # shellcheck disable=SC2064
     trap "rm -f $test_cert $test_key" RETURN
 
     # Create minimal valid cert and key (self-signed)
@@ -252,6 +253,7 @@ test_architecture_detection_logs() {
 
     local test_script
     test_script=$(mktemp)
+    # shellcheck disable=SC2064
     trap "rm -f $test_script" RETURN
 
     cat > "$test_script" << 'EOF'
@@ -295,6 +297,7 @@ test_version_resolution_logs() {
     # We'll create a minimal test that checks if the pattern exists
     local test_script
     test_script=$(mktemp)
+    # shellcheck disable=SC2064
     trap "rm -f $test_script" RETURN
 
     cat > "$test_script" << 'EOF'

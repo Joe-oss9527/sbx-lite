@@ -238,6 +238,7 @@ test_log_file_output() {
 
     local test_log_file
     test_log_file=$(mktemp)
+    # shellcheck disable=SC2064
     trap "rm -f $test_log_file" EXIT
 
     # Test 1: Log file can be specified

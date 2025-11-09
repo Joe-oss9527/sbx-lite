@@ -119,6 +119,7 @@ test_caddy_cert_path_detection_logging() {
     # Test that Caddy certificate path detection logs the paths found
     local test_cert_dir
     test_cert_dir=$(mktemp -d)
+    # shellcheck disable=SC2064
     trap "rm -rf $test_cert_dir" RETURN
 
     # Create mock certificate structure
@@ -155,6 +156,7 @@ test_logging_flow_consistency() {
     # Test that all modules use consistent logging format
     local test_script
     test_script=$(mktemp)
+    # shellcheck disable=SC2064
     trap "rm -f $test_script" RETURN
 
     cat > "$test_script" << 'EOF'
@@ -255,6 +257,7 @@ test_log_file_integration() {
 
     local test_log_file
     test_log_file=$(mktemp)
+    # shellcheck disable=SC2064
     trap "rm -f $test_log_file" RETURN
 
     # Test that log file captures all log levels
@@ -264,7 +267,7 @@ test_log_file_integration() {
         warn "warning"
         err "error"
         success "success"
-    ' 2>&1 >/dev/null
+    ' >/dev/null 2>&1
 
     # Check log file contains all messages
     local log_content

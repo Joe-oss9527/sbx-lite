@@ -192,7 +192,8 @@ msg() {
   if [[ "${LOG_FORMAT}" == "json" ]]; then
     log_json "INFO" "$@"
   else
-    local output="$(_log_timestamp)${G}[*]${N} $*"
+    local output
+    output="$(_log_timestamp)${G}[*]${N} $*"
     echo "$output" >&2
     _log_to_file "$output"
   fi
@@ -204,7 +205,8 @@ warn() {
   if [[ "${LOG_FORMAT}" == "json" ]]; then
     log_json "WARN" "$@"
   else
-    local output="$(_log_timestamp)${Y}[!]${N} $*"
+    local output
+    output="$(_log_timestamp)${Y}[!]${N} $*"
     echo "$output" >&2
     _log_to_file "$output"
   fi
@@ -216,7 +218,8 @@ err() {
   if [[ "${LOG_FORMAT}" == "json" ]]; then
     log_json "ERROR" "$@"
   else
-    local output="$(_log_timestamp)${R}[ERR]${N} $*"
+    local output
+    output="$(_log_timestamp)${R}[ERR]${N} $*"
     echo "$output" >&2
     _log_to_file "$output"
   fi
@@ -228,7 +231,8 @@ info() {
   if [[ "${LOG_FORMAT}" == "json" ]]; then
     log_json "INFO" "$@"
   else
-    local output="$(_log_timestamp)${BLUE}[INFO]${N} $*"
+    local output
+    output="$(_log_timestamp)${BLUE}[INFO]${N} $*"
     echo "$output" >&2
     _log_to_file "$output"
   fi
@@ -240,7 +244,8 @@ success() {
   if [[ "${LOG_FORMAT}" == "json" ]]; then
     log_json "INFO" "$@"
   else
-    local output="$(_log_timestamp)${G}[✓]${N} $*"
+    local output
+    output="$(_log_timestamp)${G}[✓]${N} $*"
     echo "$output" >&2
     _log_to_file "$output"
   fi
@@ -253,7 +258,8 @@ debug() {
   if [[ "${LOG_FORMAT}" == "json" ]]; then
     log_json "DEBUG" "$@"
   else
-    local output="$(_log_timestamp)${CYAN}[DEBUG]${N} $*"
+    local output
+    output="$(_log_timestamp)${CYAN}[DEBUG]${N} $*"
     echo "$output" >&2
     _log_to_file "$output"
   fi
