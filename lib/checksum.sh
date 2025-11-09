@@ -152,6 +152,7 @@ verify_singbox_binary() {
     }
 
     # Ensure cleanup (use variable expansion at trap time to avoid unbound variable in set -u)
+    # shellcheck disable=SC2064
     trap "rm -f \"$checksum_file\"" RETURN
 
     # Download checksum file
