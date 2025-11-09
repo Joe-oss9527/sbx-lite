@@ -15,6 +15,13 @@ _LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${_LIB_DIR}/common.sh"
 
 #==============================================================================
+# Module Constants
+#==============================================================================
+
+# MD5 hash constant for empty input (indicates openssl extraction failure)
+readonly EMPTY_MD5_HASH="d41d8cd98f00b204e9800998ecf8427e"
+
+#==============================================================================
 # Input Sanitization
 #==============================================================================
 
@@ -141,9 +148,6 @@ validate_cert_files() {
   fi
 
   # Step 8: Certificate-Key matching validation
-  # MD5 hash constant for empty input (indicates extraction failure)
-  readonly EMPTY_MD5_HASH="d41d8cd98f00b204e9800998ecf8427e"
-
   # Extract public key hash from certificate
   local cert_pubkey
   cert_pubkey=$(openssl x509 -in "$fullchain" -noout -pubkey 2>/dev/null | openssl md5 2>/dev/null | awk '{print $2}')
