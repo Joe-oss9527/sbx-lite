@@ -85,7 +85,13 @@ caddy_detect_arch() {
 
 # Get latest Caddy version from GitHub
 caddy_get_latest_version() {
-  curl -fsSL https://api.github.com/repos/caddyserver/caddy/releases/latest \
+  local response
+
+  if ! response=$(safe_http_get "https://api.github.com/repos/caddyserver/caddy/releases/latest"); then
+    return 1
+  fi
+
+  printf '%s\n' "$response" \
     | grep -o '"tag_name":[[:space:]]*"[^"]*"' \
     | cut -d'"' -f4
 }
@@ -99,7 +105,7 @@ caddy_install() {
     return 0
   fi
 
-  local version arch tmpdir tmpfile url
+  local version arch tmpdir tmpfile url archive checksum_file checksum_url expected actual
 
   msg "Installing Caddy for automatic TLS management..."
 
@@ -112,16 +118,41 @@ caddy_install() {
 
   tmpdir=$(mktemp -d)
   chmod 700 "$tmpdir"
-  tmpfile="${tmpdir}/caddy.tar.gz"
 
-  url="https://github.com/caddyserver/caddy/releases/download/${version}/caddy_${version:1}_linux_${arch}.tar.gz"
+  archive="caddy_${version:1}_linux_${arch}.tar.gz"
+  tmpfile="${tmpdir}/${archive}"
+  checksum_file="${tmpdir}/checksums.txt"
+
+  url="https://github.com/caddyserver/caddy/releases/download/${version}/${archive}"
+  checksum_url="https://github.com/caddyserver/caddy/releases/download/${version}/caddy_${version:1}_checksums.txt"
 
   msg "  - Downloading Caddy ${version} for ${arch}..."
-  curl -fsSL "$url" -o "$tmpfile" || {
+  if ! safe_http_get "$url" "$tmpfile"; then
     rm -rf "$tmpdir"
     err "Failed to download Caddy from: $url"
     return 1
-  }
+  fi
+
+  msg "  - Verifying checksum..."
+  if ! safe_http_get "$checksum_url" "$checksum_file"; then
+    rm -rf "$tmpdir"
+    err "Failed to download Caddy checksum file"
+    return 1
+  fi
+
+  expected=$(grep "${archive}$" "$checksum_file" | awk '{print $1}' | head -n1)
+  if [[ -z "$expected" ]]; then
+    rm -rf "$tmpdir"
+    err "Unable to find expected checksum for ${archive}"
+    return 1
+  fi
+
+  actual=$(sha256sum "$tmpfile" | awk '{print $1}')
+  if [[ "$expected" != "$actual" ]]; then
+    rm -rf "$tmpdir"
+    err "Checksum mismatch for downloaded Caddy archive"
+    return 1
+  fi
 
   msg "  - Extracting Caddy..."
   tar -xzf "$tmpfile" -C "$tmpdir" caddy || {

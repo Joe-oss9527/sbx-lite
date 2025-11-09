@@ -25,6 +25,14 @@ if [[ -d "$LIB_DIR" ]]; then
     [[ -f "$LIB_DIR/export.sh" ]] && source "$LIB_DIR/export.sh"
 fi
 
+# The shared modules enable strict mode and traps which are great for installers
+# but too aggressive for interactive management commands that need to tolerate
+# non-zero exits (e.g. systemctl status | head). Soften the environment here.
+set +e
+set +u
+set +o pipefail 2>/dev/null || true
+trap - EXIT INT TERM
+
 # Simple logo for management tool
 show_sbx_logo() {
   echo
@@ -269,20 +277,42 @@ case "$1" in
         ;;
 
     restart)
-        systemctl restart sing-box
-        echo -e "${G}✓${N} Service restarted"
-        sleep 1
-        systemctl is-active --quiet sing-box && echo -e "Status: ${G}Running${N}" || echo -e "Status: ${R}Failed${N}"
+        if systemctl restart sing-box; then
+            sleep 1
+            if systemctl is-active --quiet sing-box; then
+                echo -e "${G}✓${N} Service restarted"
+                echo -e "Status: ${G}Running${N}"
+            else
+                echo -e "Status: ${R}Failed${N}"
+                exit 1
+            fi
+        else
+            echo -e "${R}✗${N} Failed to restart service"
+            exit 1
+        fi
         ;;
 
     start)
-        systemctl start sing-box
-        echo -e "${G}✓${N} Service started"
+        if systemctl start sing-box; then
+            if systemctl is-active --quiet sing-box; then
+                echo -e "${G}✓${N} Service started"
+            else
+                echo -e "${R}✗${N} Service not running"
+                exit 1
+            fi
+        else
+            echo -e "${R}✗${N} Failed to start service"
+            exit 1
+        fi
         ;;
 
     stop)
-        systemctl stop sing-box
-        echo -e "${Y}✓${N} Service stopped"
+        if systemctl stop sing-box; then
+            echo -e "${Y}✓${N} Service stopped"
+        else
+            echo -e "${R}✗${N} Failed to stop service"
+            exit 1
+        fi
         ;;
 
     log|logs)

@@ -207,9 +207,16 @@ detect_ipv6_support() {
 choose_listen_address() {
   local ipv6_supported="$1"
 
-  # Always use :: for dual-stack support as per sing-box 1.12.0 standards
-  # DNS strategy handles IPv4-only resolution when needed
-  echo "::"
+  case "${ipv6_supported,,}" in
+    true)
+      # Dual-stack capable hosts should bind to :: to cover IPv4/IPv6
+      echo "::"
+      ;;
+    *)
+      # Fall back to IPv4-only binding when IPv6 is unavailable
+      echo "0.0.0.0"
+      ;;
+  esac
 }
 
 #==============================================================================
