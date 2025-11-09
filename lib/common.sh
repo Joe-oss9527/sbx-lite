@@ -354,8 +354,13 @@ cleanup() {
 
   # Remove temporary installer directory created during one-liner bootstrap
   if [[ -n "${INSTALLER_TEMP_DIR:-}" && -d "${INSTALLER_TEMP_DIR}" ]]; then
-    if [[ "${INSTALLER_TEMP_DIR}" =~ ^/tmp/sbx-install-[0-9]+$ ]]; then
-      rm -rf "${INSTALLER_TEMP_DIR}" 2>/dev/null || true
+    # Validate: Must be in a temp directory and contain PID pattern for safety
+    if [[ "${INSTALLER_TEMP_DIR}" =~ ^(/tmp|/var/tmp)/sbx-install-[0-9]+$ ]]; then
+      if ! rm -rf "${INSTALLER_TEMP_DIR}" 2>/dev/null; then
+        warn "Failed to cleanup temporary installer directory: ${INSTALLER_TEMP_DIR}"
+      fi
+    else
+      warn "Skipping cleanup of INSTALLER_TEMP_DIR (path validation failed): ${INSTALLER_TEMP_DIR}"
     fi
   fi
 

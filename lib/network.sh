@@ -207,16 +207,11 @@ detect_ipv6_support() {
 choose_listen_address() {
   local ipv6_supported="$1"
 
-  case "${ipv6_supported,,}" in
-    true)
-      # Dual-stack capable hosts should bind to :: to cover IPv4/IPv6
-      echo "::"
-      ;;
-    *)
-      # Fall back to IPv4-only binding when IPv6 is unavailable
-      echo "0.0.0.0"
-      ;;
-  esac
+  # Always use :: for dual-stack support as per sing-box 1.12.0 standards
+  # DNS strategy (ipv4_only/prefer_ipv4/prefer_ipv6) handles address selection
+  # This is required to prevent "network unreachable" errors on IPv4-only systems
+  # See: CLAUDE.md line 527, commit 771fca1
+  echo "::"
 }
 
 #==============================================================================

@@ -133,6 +133,15 @@ caddy_install() {
     return 1
   fi
 
+  # Checksum Verification Strategy:
+  # Unlike sing-box (which uses graceful degradation), Caddy verification is FATAL on failure.
+  # Rationale:
+  #   - Caddy runs with elevated privileges (binds to port 80/443)
+  #   - Caddy handles TLS certificates (critical security component)
+  #   - Compromised Caddy binary could leak private keys or issue fraudulent certificates
+  #   - sing-box is the primary component; Caddy is optional (can use manual certificates)
+  # Trade-off: Higher security guarantee vs. installation resilience
+  # Override: Not currently supported (Caddy is optional, users can provide manual certs)
   msg "  - Verifying checksum..."
   if ! safe_http_get "$checksum_url" "$checksum_file"; then
     rm -rf "$tmpdir"

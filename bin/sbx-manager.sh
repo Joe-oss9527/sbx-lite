@@ -25,14 +25,6 @@ if [[ -d "$LIB_DIR" ]]; then
     [[ -f "$LIB_DIR/export.sh" ]] && source "$LIB_DIR/export.sh"
 fi
 
-# The shared modules enable strict mode and traps which are great for installers
-# but too aggressive for interactive management commands that need to tolerate
-# non-zero exits (e.g. systemctl status | head). Soften the environment here.
-set +e
-set +u
-set +o pipefail 2>/dev/null || true
-trap - EXIT INT TERM
-
 # Simple logo for management tool
 show_sbx_logo() {
   echo
