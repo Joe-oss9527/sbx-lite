@@ -380,7 +380,7 @@ write_config() {
   # Add Reality inbound
   local reality_config
   reality_config=$(create_reality_inbound "$UUID" "$REALITY_PORT_CHOSEN" "$listen_addr" \
-    "$SNI_DEFAULT" "$PRIV" "$SID") || \
+    "${SNI_DEFAULT:-www.microsoft.com}" "$PRIV" "$SID") || \
     die "Failed to create Reality inbound"
 
   # Add Reality inbound to base config
