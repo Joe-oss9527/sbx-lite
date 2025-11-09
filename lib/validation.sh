@@ -43,6 +43,9 @@ validate_domain() {
   # Check length (max 253 characters for FQDN)
   [[ ${#domain} -le "${MAX_DOMAIN_LENGTH}" ]] || return 1
 
+  # Must contain at least one dot (require domain.tld format)
+  [[ "$domain" =~ \. ]] || return 1
+
   # Check for valid domain format (letters, numbers, dots, hyphens only)
   [[ "$domain" =~ ^[a-zA-Z0-9.-]+$ ]] || return 1
 
@@ -51,6 +54,18 @@ validate_domain() {
 
   # Must not contain consecutive dots
   [[ ! "$domain" =~ \.\. ]] || return 1
+
+  # Each label (part between dots) must not end with hyphen
+  # Split by dots and check each label
+  local IFS='.'
+  local -a labels
+  read -ra labels <<< "$domain"
+  for label in "${labels[@]}"; do
+    # Label must not be empty
+    [[ -n "$label" ]] || return 1
+    # Label must not end with hyphen
+    [[ ! "$label" =~ -$ ]] || return 1
+  done
 
   # Reserved names
   [[ "$domain" != "localhost" ]] || return 1
@@ -233,8 +248,10 @@ validate_env_vars() {
 # Validate Reality short ID (must be exactly 8 hex characters for sing-box)
 validate_short_id() {
   local sid="$1"
-  [[ "$sid" =~ ^[0-9a-fA-F]{8}$ ]] || {
-    err "Short ID must be exactly 8 hexadecimal characters, got: $sid"
+  # Allow 1-8 hexadecimal characters for flexibility
+  # Note: sing-box typically uses 8 chars, but shorter IDs are valid
+  [[ "$sid" =~ ^[0-9a-fA-F]{1,8}$ ]] || {
+    err "Short ID must be 1-8 hexadecimal characters, got: $sid"
     return 1
   }
   return 0

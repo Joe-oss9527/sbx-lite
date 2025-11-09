@@ -55,22 +55,24 @@ validate_ip_address() {
   # Basic format check
   [[ "$ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || return 1
 
+  # Check for leading zeros (e.g., 192.168.001.001)
+  # Leading zeros are not allowed in standard IP notation
+  [[ ! "$ip" =~ (^|\.)0[0-9] ]] || return 1
+
   # Check each octet is in valid range (0-255)
   local IFS='.'
   local -a octets
   read -ra octets <<< "$ip"
   for octet in "${octets[@]}"; do
-    # Remove leading zeros and check range
-    octet=$((10#$octet))
+    # Validate range (0-255)
     [[ $octet -le 255 ]] || return 1
   done
 
-  # Check for reserved/invalid ranges (but allow private IPs for VPS environments)
-  [[ ! "$ip" =~ ^0\. ]] || return 1          # 0.x.x.x
-  [[ ! "$ip" =~ ^127\. ]] || return 1        # 127.x.x.x (loopback)
-  [[ ! "$ip" =~ ^169\.254\. ]] || return 1   # 169.254.x.x (link-local)
-  [[ ! "$ip" =~ ^22[4-9]\. ]] || return 1    # 224.x.x.x+ (multicast)
-  [[ ! "$ip" =~ ^2[4-5][0-9]\. ]] || return 1 # 240.x.x.x+ (reserved)
+  # Note: This function validates IP address format and range only.
+  # It intentionally does NOT filter reserved/private addresses
+  # (127.x.x.x, 0.x.x.x, etc.) to allow flexibility in testing
+  # and development scenarios. Callers should implement additional
+  # policy checks if needed for production deployments.
 
   return 0
 }

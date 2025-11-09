@@ -180,7 +180,7 @@ test_validate_short_id_valid_ids() {
     assert_success "8 hex chars (uppercase)" "validate_short_id 'ABCDEF12'"
     assert_success "8 hex chars (mixed)" "validate_short_id 'AbCdEf12'"
     assert_success "All numbers" "validate_short_id '12345678'"
-    assert_success "All letters" "validate_short_id 'abcdefgh'"
+    assert_success "All letters (valid hex)" "validate_short_id 'abcdefab'"
     assert_success "1 char" "validate_short_id 'a'"
     assert_success "4 chars" "validate_short_id 'ab12'"
 }
