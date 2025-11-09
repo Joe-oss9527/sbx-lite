@@ -43,7 +43,7 @@ cleanup_test_dirs
 test_start "One-liner module download works"
 temp_test_dir=$(mktemp -d)
 cp "${INSTALL_SCRIPT}" "$temp_test_dir/"
-cd "$temp_test_dir"
+cd "$temp_test_dir" || exit
 
 # Run install script to trigger download, then exit immediately
 output=$(timeout 30 bash install_multi.sh --version 2>&1 || true)
@@ -55,7 +55,7 @@ else
     echo "$output" | tail -5
 fi
 
-cd - >/dev/null
+cd - >/dev/null || exit
 rm -rf "$temp_test_dir"
 
 #==============================================================================
@@ -64,7 +64,7 @@ rm -rf "$temp_test_dir"
 test_start "DEBUG=1 enables debug logging"
 temp_test_dir=$(mktemp -d)
 cp "${INSTALL_SCRIPT}" "$temp_test_dir/"
-cd "$temp_test_dir"
+cd "$temp_test_dir" || exit
 
 output=$(DEBUG=1 timeout 30 bash install_multi.sh --version 2>&1 || true)
 
@@ -74,7 +74,7 @@ else
     test_fail "Debug logging not working"
 fi
 
-cd - >/dev/null
+cd - >/dev/null || exit
 rm -rf "$temp_test_dir"
 
 #==============================================================================
@@ -83,7 +83,7 @@ rm -rf "$temp_test_dir"
 test_start "All 14 modules downloaded"
 temp_test_dir=$(mktemp -d)
 cp "${INSTALL_SCRIPT}" "$temp_test_dir/"
-cd "$temp_test_dir"
+cd "$temp_test_dir" || exit
 
 output=$(timeout 30 bash install_multi.sh --version 2>&1 || true)
 
@@ -93,7 +93,7 @@ else
     test_fail "Not all modules downloaded"
 fi
 
-cd - >/dev/null
+cd - >/dev/null || exit
 rm -rf "$temp_test_dir"
 
 #==============================================================================
@@ -102,7 +102,7 @@ rm -rf "$temp_test_dir"
 test_start "Modules loaded without errors"
 temp_test_dir=$(mktemp -d)
 cp "${INSTALL_SCRIPT}" "$temp_test_dir/"
-cd "$temp_test_dir"
+cd "$temp_test_dir" || exit
 
 output=$(timeout 30 bash install_multi.sh --version 2>&1 || true)
 
@@ -113,7 +113,7 @@ else
     echo "$output" | grep -E "(unbound variable|Required module not found)"
 fi
 
-cd - >/dev/null
+cd - >/dev/null || exit
 rm -rf "$temp_test_dir"
 
 #==============================================================================
@@ -122,7 +122,7 @@ rm -rf "$temp_test_dir"
 test_start "Logging functions (msg, warn, err) available"
 temp_test_dir=$(mktemp -d)
 cp "${INSTALL_SCRIPT}" "$temp_test_dir/"
-cd "$temp_test_dir"
+cd "$temp_test_dir" || exit
 
 # Create test script that uses the modules
 cat > test_logging.sh << 'EOF'
@@ -149,7 +149,7 @@ else
     test_fail "Logging functions not available: $output"
 fi
 
-cd - >/dev/null
+cd - >/dev/null || exit
 rm -rf "$temp_test_dir"
 
 #==============================================================================
@@ -158,7 +158,7 @@ rm -rf "$temp_test_dir"
 test_start "SCRIPT_DIR preserved after loading all modules"
 temp_test_dir=$(mktemp -d)
 cp "${INSTALL_SCRIPT}" "$temp_test_dir/"
-cd "$temp_test_dir"
+cd "$temp_test_dir" || exit
 
 # Create test script
 cat > test_scriptdir.sh << 'EOF'
@@ -192,7 +192,7 @@ else
     test_fail "SCRIPT_DIR preservation check failed: $output"
 fi
 
-cd - >/dev/null
+cd - >/dev/null || exit
 rm -rf "$temp_test_dir"
 
 #==============================================================================
@@ -201,7 +201,7 @@ rm -rf "$temp_test_dir"
 test_start "Parallel download faster than sequential"
 temp_test_dir=$(mktemp -d)
 cp "${INSTALL_SCRIPT}" "$temp_test_dir/"
-cd "$temp_test_dir"
+cd "$temp_test_dir" || exit
 
 # Measure parallel download time
 start_parallel=$(date +%s)
@@ -225,7 +225,7 @@ else
     test_fail "Parallel ($parallel_time s) not faster than sequential ($sequential_time s)"
 fi
 
-cd - >/dev/null
+cd - >/dev/null || exit
 rm -rf "$temp_test_dir"
 
 #==============================================================================
@@ -234,7 +234,7 @@ rm -rf "$temp_test_dir"
 test_start "Falls back to sequential if parallel fails"
 temp_test_dir=$(mktemp -d)
 cp "${INSTALL_SCRIPT}" "$temp_test_dir/"
-cd "$temp_test_dir"
+cd "$temp_test_dir" || exit
 
 # Disable xargs to force fallback
 output=$(PATH="/usr/bin:/bin" timeout 30 bash install_multi.sh --version 2>&1 || true)
@@ -246,7 +246,7 @@ else
     test_fail "Fallback mechanism not working"
 fi
 
-cd - >/dev/null
+cd - >/dev/null || exit
 rm -rf "$temp_test_dir"
 
 # Cleanup after tests
