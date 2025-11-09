@@ -160,6 +160,9 @@ The project follows a clean modular architecture with clear separation of concer
    - `caddy_wait_for_cert()` - Wait for certificate issuance with timeout
    - `caddy_create_renewal_hook()` - Automatic certificate renewal hooks
    - `caddy_uninstall()` - Clean Caddy removal
+   - **SHA256 checksum verification** - FATAL on failure (stricter than sing-box)
+     - Rationale: Caddy handles TLS certificates and private keys
+     - No graceful degradation to prevent compromised certificate infrastructure
    - Non-conflicting port configuration (8445 for HTTPS cert management)
    - Systemd service integration with automatic startup
    - Daily certificate sync via systemd timer
@@ -226,7 +229,10 @@ The project follows a clean modular architecture with clear separation of concer
   - **Module list**: common, retry, download, network, validation, **checksum**, certificate, caddy, config, service, ui, backup, export
 
 - **bin/sbx-manager.sh** (357 lines) - Enhanced management tool
-  - Service management commands
+  - Service management commands with proper error handling
+    - Validates systemctl exit status before reporting success
+    - Propagates failures with non-zero exit codes
+    - Maintains strict mode for security (set -euo pipefail)
   - Configuration display
   - Backup operations (create, list, restore, cleanup)
   - Export operations (v2rayn, clash, uri, qr, subscription)

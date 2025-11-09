@@ -269,20 +269,42 @@ case "$1" in
         ;;
 
     restart)
-        systemctl restart sing-box
-        echo -e "${G}✓${N} Service restarted"
-        sleep 1
-        systemctl is-active --quiet sing-box && echo -e "Status: ${G}Running${N}" || echo -e "Status: ${R}Failed${N}"
+        if systemctl restart sing-box; then
+            sleep 1
+            if systemctl is-active --quiet sing-box; then
+                echo -e "${G}✓${N} Service restarted"
+                echo -e "Status: ${G}Running${N}"
+            else
+                echo -e "Status: ${R}Failed${N}"
+                exit 1
+            fi
+        else
+            echo -e "${R}✗${N} Failed to restart service"
+            exit 1
+        fi
         ;;
 
     start)
-        systemctl start sing-box
-        echo -e "${G}✓${N} Service started"
+        if systemctl start sing-box; then
+            if systemctl is-active --quiet sing-box; then
+                echo -e "${G}✓${N} Service started"
+            else
+                echo -e "${R}✗${N} Service not running"
+                exit 1
+            fi
+        else
+            echo -e "${R}✗${N} Failed to start service"
+            exit 1
+        fi
         ;;
 
     stop)
-        systemctl stop sing-box
-        echo -e "${Y}✓${N} Service stopped"
+        if systemctl stop sing-box; then
+            echo -e "${Y}✓${N} Service stopped"
+        else
+            echo -e "${R}✗${N} Failed to stop service"
+            exit 1
+        fi
         ;;
 
     log|logs)

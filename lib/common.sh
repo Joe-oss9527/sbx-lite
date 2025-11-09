@@ -352,6 +352,18 @@ cleanup() {
   # Clean up known temporary config files (specific to this process)
   rm -f "${SB_CONF}.tmp" 2>/dev/null || true
 
+  # Remove temporary installer directory created during one-liner bootstrap
+  if [[ -n "${INSTALLER_TEMP_DIR:-}" && -d "${INSTALLER_TEMP_DIR}" ]]; then
+    # Validate: Must be in a temp directory and contain PID pattern for safety
+    if [[ "${INSTALLER_TEMP_DIR}" =~ ^(/tmp|/var/tmp)/sbx-install-[0-9]+$ ]]; then
+      if ! rm -rf "${INSTALLER_TEMP_DIR}" 2>/dev/null; then
+        warn "Failed to cleanup temporary installer directory: ${INSTALLER_TEMP_DIR}"
+      fi
+    else
+      warn "Skipping cleanup of INSTALLER_TEMP_DIR (path validation failed): ${INSTALLER_TEMP_DIR}"
+    fi
+  fi
+
   # Clean up stale port lock files (over 60 minutes old, with safe timeout)
   # This is safe because it only removes very old locks that are likely orphaned
   if [[ -d "/var/lock" ]]; then

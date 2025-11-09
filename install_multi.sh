@@ -338,6 +338,9 @@ _load_modules() {
         mv "${temp_lib_dir}"/*.sh "${SCRIPT_DIR}/lib/"
         rmdir "${temp_lib_dir}"
 
+        # Remember the generated directory so shared cleanup can purge it later
+        INSTALLER_TEMP_DIR="${SCRIPT_DIR}"
+
         # Register cleanup for temporary files
         trap 'rm -rf "${SCRIPT_DIR}" 2>/dev/null || true' EXIT INT TERM
     fi
