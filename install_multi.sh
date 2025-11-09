@@ -352,6 +352,64 @@ _load_modules() {
         mv "${temp_lib_dir}"/*.sh "${SCRIPT_DIR}/lib/"
         rmdir "${temp_lib_dir}"
 
+        # Download bin/sbx-manager.sh for one-liner install
+        echo "  Downloading sbx-manager script..."
+        [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: Creating ${SCRIPT_DIR}/bin directory" >&2
+        mkdir -p "${SCRIPT_DIR}/bin"
+
+        local manager_url="${github_repo}/bin/sbx-manager.sh"
+        local manager_file="${SCRIPT_DIR}/bin/sbx-manager.sh"
+        local download_success=0
+
+        if command -v curl >/dev/null 2>&1; then
+            [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: Downloading sbx-manager.sh via curl from ${manager_url}" >&2
+            if curl -fsSL --connect-timeout "${DOWNLOAD_CONNECT_TIMEOUT_SEC}" \
+                --max-time "${DOWNLOAD_MAX_TIMEOUT_SEC}" "${manager_url}" -o "${manager_file}" 2>/dev/null; then
+                download_success=1
+            fi
+        elif command -v wget >/dev/null 2>&1; then
+            [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: Downloading sbx-manager.sh via wget from ${manager_url}" >&2
+            if wget -q --timeout="${DOWNLOAD_MAX_TIMEOUT_SEC}" "${manager_url}" -O "${manager_file}" 2>/dev/null; then
+                download_success=1
+            fi
+        else
+            echo "ERROR: Neither curl nor wget available for downloading sbx-manager.sh"
+            exit 1
+        fi
+
+        # Validate downloaded manager script
+        if [[ $download_success -eq 0 ]]; then
+            echo "ERROR: Failed to download sbx-manager.sh from ${manager_url}"
+            echo "       Please check network connection and try again."
+            exit 1
+        fi
+
+        if [[ ! -f "${manager_file}" ]]; then
+            echo "ERROR: sbx-manager.sh download completed but file not found"
+            exit 1
+        fi
+
+        # Check file size (full version should be >5KB, typically ~15KB)
+        local mgr_size
+        mgr_size=$(stat -c%s "${manager_file}" 2>/dev/null || stat -f%z "${manager_file}" 2>/dev/null || echo "0")
+        [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: sbx-manager.sh file size: ${mgr_size} bytes" >&2
+
+        if [[ "${mgr_size}" -lt 5000 ]]; then
+            echo "ERROR: Downloaded sbx-manager.sh is too small (${mgr_size} bytes)"
+            echo "       Expected: >5000 bytes (full version is ~15KB)"
+            echo "       File may be corrupted or incomplete."
+            exit 1
+        fi
+
+        # Validate bash syntax
+        if ! bash -n "${manager_file}" 2>/dev/null; then
+            echo "ERROR: Invalid bash syntax in downloaded sbx-manager.sh"
+            echo "       File may be corrupted."
+            exit 1
+        fi
+
+        echo "  ✓ sbx-manager.sh downloaded and validated (${mgr_size} bytes)"
+
         # Remember the generated directory so shared cleanup can purge it later
         INSTALLER_TEMP_DIR="${SCRIPT_DIR}"
 
@@ -947,7 +1005,12 @@ install_manager_script() {
         success "  ✓ Management commands installed: sbx-manager, sbx"
         success "  ✓ Library modules installed to $lib_path/"
     else
-        warn "Manager template not found, creating basic version..."
+        # This fallback should never be reached in one-liner install (we download the file now)
+        # Keep as safety net for unexpected scenarios
+        err "Manager template not found at: $manager_template"
+        err "This indicates an installation issue. Please report this error."
+        err "Creating minimal fallback version (limited functionality)..."
+
         # Fallback to inline version if template not found
         cat > /usr/local/bin/sbx-manager <<'EOF'
 #!/bin/bash
@@ -960,7 +1023,15 @@ esac
 EOF
         chmod +x /usr/local/bin/sbx-manager
         ln -sf /usr/local/bin/sbx-manager /usr/local/bin/sbx
-        warn "  ⚠ Basic manager installed (template not found)"
+
+        warn "  ⚠ WARNING: Minimal manager installed (missing advanced features)"
+        warn "     - 'sbx info' will not show URIs or QR code hints"
+        warn "     - 'sbx qr' command not available"
+        warn "     - 'sbx export' and 'sbx backup' commands not available"
+        warn ""
+        warn "  To get full functionality, please reinstall or manually download:"
+        warn "  curl -fsSL https://raw.githubusercontent.com/Joe-oss9527/sbx-lite/main/bin/sbx-manager.sh \\"
+        warn "    -o /usr/local/bin/sbx-manager && chmod 755 /usr/local/bin/sbx-manager"
     fi
 }
 
