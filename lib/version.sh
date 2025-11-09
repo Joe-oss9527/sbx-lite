@@ -193,7 +193,15 @@ resolve_singbox_version() {
         return 1
     fi
 
-    success "  ✓ Resolved to: $resolved_version"
+    # Determine version type for logging
+    local version_type
+    case "$version_lower" in
+        stable|"") version_type="stable" ;;
+        latest) version_type="latest" ;;
+        v*|[0-9]*) version_type="specific" ;;
+    esac
+
+    success "Resolved sing-box version: $resolved_version (type: $version_type)"
     echo "$resolved_version"
     return 0
 }

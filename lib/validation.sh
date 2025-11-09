@@ -178,6 +178,16 @@ validate_cert_files() {
   fi
 
   # All validations passed
+  success "Certificate validation passed"
+  debug "Certificate: $fullchain"
+  debug "Private key: $key"
+  debug "Certificate-key match confirmed (pubkey MD5: $cert_pubkey)"
+
+  # Log expiry information if available
+  local expiry_date
+  expiry_date=$(openssl x509 -in "$fullchain" -noout -enddate 2>/dev/null | cut -d= -f2)
+  [[ -n "$expiry_date" ]] && debug "Certificate expires: $expiry_date"
+
   return 0
 }
 

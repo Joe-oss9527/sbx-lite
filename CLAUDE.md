@@ -438,6 +438,62 @@ SINGBOX_VERSION=v1.11.0-beta.1 bash install_multi.sh
   - **Behavior**: Gracefully degrades if checksum files unavailable (with warning)
   - **Fatal on mismatch**: Installation aborts if checksums don't match
 
+### Logging Configuration (Optional) ⭐ NEW
+- **Debug Logging**:
+  - `DEBUG=1` - Enable debug output for troubleshooting
+  - Shows detailed operation logs, configuration steps, internal decisions
+  - Includes function entry/exit, variable values, intermediate results
+  - Example: `DEBUG=1 bash install_multi.sh`
+
+- **Timestamp Logging**:
+  - `LOG_TIMESTAMPS=1` - Add timestamps to all log messages
+  - Format: `[YYYY-MM-DD HH:MM:SS]` prefix on every log line
+  - Useful for performance analysis and timeline reconstruction
+  - Example: `LOG_TIMESTAMPS=1 bash install_multi.sh`
+
+- **Structured JSON Logging**:
+  - `LOG_FORMAT=json` - Output logs in JSON format
+  - Structure: `{"timestamp":"ISO-8601","level":"LEVEL","message":"text"}`
+  - Ideal for log aggregation systems (ELK, Splunk, CloudWatch)
+  - Example: `LOG_FORMAT=json bash install_multi.sh`
+
+- **Log File Output**:
+  - `LOG_FILE=/path/to/file.log` - Write logs to file (in addition to stderr)
+  - Creates file with secure permissions (600)
+  - Dual output: both console and file simultaneously
+  - Auto-rotation at 10MB with 5 log retention
+  - Example: `LOG_FILE=/var/log/sbx-install.log bash install_multi.sh`
+
+- **Log Level Filtering**:
+  - `LOG_LEVEL_FILTER=LEVEL` - Filter logs by severity
+  - Levels: `ERROR` (errors only), `WARN` (warnings+errors), `INFO` (default, all except debug), `DEBUG` (everything with DEBUG=1)
+  - **Case-insensitive**: `error`, `ERROR`, `Error` all work
+  - **Auto-validation**: Invalid values trigger warning and use safe default (INFO)
+  - Hierarchical: ERROR < WARN < INFO < DEBUG
+  - Example: `LOG_LEVEL_FILTER=ERROR bash install_multi.sh`
+
+**Combined Usage Examples**:
+```bash
+# Debug mode with timestamps
+DEBUG=1 LOG_TIMESTAMPS=1 bash install_multi.sh
+
+# JSON logging to file for production monitoring
+LOG_FORMAT=json LOG_FILE=/var/log/sbx.log bash install_multi.sh
+
+# Full troubleshooting mode
+DEBUG=1 LOG_TIMESTAMPS=1 LOG_FILE=/tmp/debug.log bash install_multi.sh
+
+# Silent mode (errors only)
+LOG_LEVEL_FILTER=ERROR bash install_multi.sh 2>/dev/null
+```
+
+**Logging Best Practices**:
+- Use `DEBUG=1` for initial installation troubleshooting
+- Use `LOG_FILE` for automated/unattended installations
+- Use `LOG_FORMAT=json` for integration with monitoring systems
+- Use `LOG_TIMESTAMPS=1` for performance analysis
+- Regular installations need no logging flags (sensible defaults)
+
 ## Critical Implementation Details
 
 ### Security & Validation Rules

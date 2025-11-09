@@ -39,10 +39,14 @@ maybe_issue_cert() {
       info "No CERT_MODE specified - using Caddy for automatic certificate management"
       info "  ℹ Caddy will automatically obtain and renew certificates via Let's Encrypt"
       export CERT_MODE="caddy"
+      debug "Auto-enabled certificate mode: caddy (domain: $DOMAIN)"
     else
       # No domain or Reality-only mode - skip certificate issuance
+      debug "Skipping certificate issuance (Reality-only mode or no domain)"
       return 0
     fi
+  else
+    msg "Certificate mode: $CERT_MODE"
   fi
 
   # Issue certificate based on mode

@@ -126,29 +126,187 @@ _init_colors() {
 # Logging Functions
 #==============================================================================
 
+# Logging configuration from environment
+LOG_TIMESTAMPS="${LOG_TIMESTAMPS:-0}"
+LOG_FORMAT="${LOG_FORMAT:-text}"
+LOG_FILE="${LOG_FILE:-}"
+LOG_LEVEL_FILTER="${LOG_LEVEL_FILTER:-}"
+
+# Log level values (lower number = higher priority)
+declare -r -A LOG_LEVELS=( [ERROR]=0 [WARN]=1 [INFO]=2 [DEBUG]=3 )
+
+# Normalize and validate LOG_LEVEL_FILTER
+if [[ -n "${LOG_LEVEL_FILTER}" ]]; then
+  # Convert to uppercase for case-insensitive matching
+  LOG_LEVEL_FILTER="${LOG_LEVEL_FILTER^^}"
+
+  # Validate against known levels
+  if [[ ! "${LOG_LEVELS[$LOG_LEVEL_FILTER]+_}" ]]; then
+    # Invalid level - warn and use safe default
+    echo "Warning: Invalid LOG_LEVEL_FILTER='${LOG_LEVEL_FILTER}'. Valid values: ERROR, WARN, INFO, DEBUG. Using INFO." >&2
+    LOG_LEVEL_FILTER="INFO"
+  fi
+fi
+
+declare -r LOG_LEVEL_CURRENT="${LOG_LEVELS[${LOG_LEVEL_FILTER:-INFO}]:-2}"
+
+# Get timestamp prefix if enabled
+_log_timestamp() {
+  [[ "${LOG_TIMESTAMPS}" == "1" ]] && printf "[%s] " "$(date '+%Y-%m-%d %H:%M:%S')" || true
+}
+
+# Write to log file if configured
+_log_to_file() {
+  [[ -z "${LOG_FILE}" ]] && return 0
+
+  # Create log file with secure permissions on first write
+  if [[ ! -f "${LOG_FILE}" ]]; then
+    touch "${LOG_FILE}" && chmod 600 "${LOG_FILE}"
+  fi
+
+  echo "$*" >> "${LOG_FILE}" 2>/dev/null || true
+}
+
+# JSON structured logging helper
+log_json() {
+  [[ "${LOG_FORMAT}" != "json" ]] && return 0
+
+  local level="$1"
+  shift
+  local message="$*"
+
+  # Escape special characters in message for JSON
+  message="${message//\\/\\\\}"
+  message="${message//\"/\\\"}"
+  message="${message//$'\n'/\\n}"
+  message="${message//$'\r'/\\r}"
+  message="${message//$'\t'/\\t}"
+
+  local json_log
+  json_log=$(printf '{"timestamp":"%s","level":"%s","message":"%s"}' \
+    "$(date -Iseconds)" "$level" "$message")
+
+  echo "$json_log" >&2
+  _log_to_file "$json_log"
+}
+
+# Check if message should be logged based on level
+_should_log() {
+  local msg_level="$1"
+  local msg_level_value="${LOG_LEVELS[$msg_level]:-2}"
+
+  [[ -z "${LOG_LEVEL_FILTER}" ]] && return 0
+  [[ $msg_level_value -le $LOG_LEVEL_CURRENT ]] && return 0
+  return 1
+}
+
 msg() {
-  echo "${G}[*]${N} $*" >&2
+  _should_log "INFO" || return 0
+
+  if [[ "${LOG_FORMAT}" == "json" ]]; then
+    log_json "INFO" "$@"
+  else
+    local output
+    output="$(_log_timestamp)${G}[*]${N} $*"
+    echo "$output" >&2
+    _log_to_file "$output"
+  fi
 }
 
 warn() {
-  echo "${Y}[!]${N} $*" >&2
+  _should_log "WARN" || return 0
+
+  if [[ "${LOG_FORMAT}" == "json" ]]; then
+    log_json "WARN" "$@"
+  else
+    local output
+    output="$(_log_timestamp)${Y}[!]${N} $*"
+    echo "$output" >&2
+    _log_to_file "$output"
+  fi
 }
 
 err() {
-  echo "${R}[ERR]${N} $*" >&2
+  _should_log "ERROR" || return 0
+
+  if [[ "${LOG_FORMAT}" == "json" ]]; then
+    log_json "ERROR" "$@"
+  else
+    local output
+    output="$(_log_timestamp)${R}[ERR]${N} $*"
+    echo "$output" >&2
+    _log_to_file "$output"
+  fi
 }
 
 info() {
-  echo "${BLUE}[INFO]${N} $*" >&2
+  _should_log "INFO" || return 0
+
+  if [[ "${LOG_FORMAT}" == "json" ]]; then
+    log_json "INFO" "$@"
+  else
+    local output
+    output="$(_log_timestamp)${BLUE}[INFO]${N} $*"
+    echo "$output" >&2
+    _log_to_file "$output"
+  fi
 }
 
 success() {
-  echo "${G}[✓]${N} $*" >&2
+  _should_log "INFO" || return 0
+
+  if [[ "${LOG_FORMAT}" == "json" ]]; then
+    log_json "INFO" "$@"
+  else
+    local output
+    output="$(_log_timestamp)${G}[✓]${N} $*"
+    echo "$output" >&2
+    _log_to_file "$output"
+  fi
+}
+
+debug() {
+  [[ "${DEBUG:-0}" == "1" ]] || return 0
+  _should_log "DEBUG" || return 0
+
+  if [[ "${LOG_FORMAT}" == "json" ]]; then
+    log_json "DEBUG" "$@"
+  else
+    local output
+    output="$(_log_timestamp)${CYAN}[DEBUG]${N} $*"
+    echo "$output" >&2
+    _log_to_file "$output"
+  fi
 }
 
 die() {
   err "$*"
   exit 1
+}
+
+# Log rotation helper
+rotate_logs() {
+  local log_file="${1:-${LOG_FILE}}"
+  local max_size_kb="${2:-10240}"  # Default 10MB
+
+  [[ -z "$log_file" ]] && return 0
+  [[ ! -f "$log_file" ]] && return 0
+
+  # Get file size in KB
+  local file_size
+  file_size=$(du -k "$log_file" 2>/dev/null | cut -f1)
+
+  # Rotate if larger than max size
+  if [[ $file_size -gt $max_size_kb ]]; then
+    local timestamp
+    timestamp=$(date '+%Y%m%d-%H%M%S')
+    mv "$log_file" "${log_file}.${timestamp}" 2>/dev/null || true
+    touch "$log_file" && chmod 600 "$log_file"
+
+    # Keep only last 5 rotated logs
+    find "$(dirname "$log_file")" -name "$(basename "$log_file").*" -type f \
+      | sort -r | tail -n +6 | xargs rm -f 2>/dev/null || true
+  fi
 }
 
 #==============================================================================
@@ -366,6 +524,7 @@ _init_colors
 trap cleanup EXIT INT TERM
 
 # Export functions for use in other modules
-export -f msg warn err info success die need_root have safe_rm_temp
+export -f msg warn err info success debug die need_root have safe_rm_temp
+export -f log_json rotate_logs _log_timestamp _log_to_file _should_log
 export -f generate_uuid generate_reality_keypair generate_hex_string
 export -f generate_qr_code generate_all_qr_codes

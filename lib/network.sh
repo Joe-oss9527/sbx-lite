@@ -40,6 +40,10 @@ get_public_ip() {
 
     # Validate the detected IP more thoroughly
     if [[ -n "$ip" ]] && validate_ip_address "$ip"; then
+      # Extract service name for logging
+      local service_name="${service##*/}"
+      [[ -z "$service_name" ]] && service_name="${service#https://}"
+      success "Public IP detected: $ip (source: ${service_name%%/*})"
       echo "$ip"
       return 0
     fi
@@ -135,6 +139,7 @@ allocate_port() {
   # First try the preferred port with retries
   while [[ $retry_count -lt $max_retries ]]; do
     if try_allocate_port "$port"; then
+      success "Port $port allocated successfully for $name"
       return 0
     fi
 
@@ -186,6 +191,13 @@ detect_ipv6_support() {
         fi
       fi
     fi
+  fi
+
+  # Log detection result
+  if [[ "$ipv6_supported" == "true" ]]; then
+    success "IPv6 support detected and verified"
+  else
+    msg "IPv6 not available, using IPv4-only configuration"
   fi
 
   echo "$ipv6_supported"
