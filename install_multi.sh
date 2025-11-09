@@ -47,15 +47,20 @@ _download_single_module() {
     local module_file="${temp_lib_dir}/${module}.sh"
     local module_url="${github_repo}/lib/${module}.sh"
 
+    # Debug logging (if enabled)
+    [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: Downloading ${module} from ${module_url}" >&2
+
     # Download module
     if command -v curl >/dev/null 2>&1; then
         if ! curl -fsSL --connect-timeout "${DOWNLOAD_CONNECT_TIMEOUT_SEC}" --max-time "${DOWNLOAD_MAX_TIMEOUT_SEC}" "${module_url}" -o "${module_file}" 2>&1; then
             echo "DOWNLOAD_FAILED:${module}" >&2
+            [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: curl failed for ${module}" >&2
             return 1
         fi
     elif command -v wget >/dev/null 2>&1; then
         if ! wget -q --timeout="${DOWNLOAD_MAX_TIMEOUT_SEC}" "${module_url}" -O "${module_file}" 2>&1; then
             echo "DOWNLOAD_FAILED:${module}" >&2
+            [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: wget failed for ${module}" >&2
             return 1
         fi
     else
@@ -66,12 +71,15 @@ _download_single_module() {
     # Verify downloaded file
     if [[ ! -f "${module_file}" ]]; then
         echo "FILE_NOT_FOUND:${module}" >&2
+        [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: File not found: ${module_file}" >&2
         return 1
     fi
 
     # Check file size
     local file_size
     file_size=$(stat -c%s "${module_file}" 2>/dev/null || stat -f%z "${module_file}" 2>/dev/null || echo "0")
+    [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: ${module} file size: ${file_size} bytes" >&2
+
     if [[ "${file_size}" -lt "${MIN_MODULE_FILE_SIZE_BYTES}" ]]; then
         echo "FILE_TOO_SMALL:${module}:${file_size}" >&2
         return 1
@@ -80,10 +88,12 @@ _download_single_module() {
     # Validate bash syntax
     if ! bash -n "${module_file}" 2>/dev/null; then
         echo "SYNTAX_ERROR:${module}" >&2
+        [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: Syntax check failed for ${module}" >&2
         return 1
     fi
 
     # Success - output for progress tracking
+    [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: ${module} downloaded and verified successfully" >&2
     echo "SUCCESS:${module}:${file_size}"
     return 0
 }
@@ -103,6 +113,7 @@ _download_modules_parallel() {
     # Export function and variables for subshells
     export -f _download_single_module
     export temp_lib_dir github_repo
+    export DOWNLOAD_CONNECT_TIMEOUT_SEC DOWNLOAD_MAX_TIMEOUT_SEC MIN_MODULE_FILE_SIZE_BYTES
 
     # Track results
     local failed_modules=()
@@ -295,6 +306,7 @@ _load_modules() {
     # Check if lib directory exists
     if [[ ! -d "${SCRIPT_DIR}/lib" ]]; then
         echo "[*] One-liner install detected, downloading required modules..."
+        [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: SCRIPT_DIR=${SCRIPT_DIR}, lib directory not found" >&2
 
         # Create temporary directory for modules
         temp_lib_dir="$(mktemp -d)" || {
@@ -302,6 +314,7 @@ _load_modules() {
             exit 1
         }
         chmod "${SECURE_DIR_PERMISSIONS}" "${temp_lib_dir}"
+        [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: Created temp directory: ${temp_lib_dir}" >&2
 
         # Determine download strategy: parallel or sequential
         local use_parallel=1
@@ -334,6 +347,7 @@ _load_modules() {
         local parent_dir
         parent_dir="$(dirname "${temp_lib_dir}")"
         SCRIPT_DIR="${parent_dir}/sbx-install-$$"
+        [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: Creating permanent directory: ${SCRIPT_DIR}/lib" >&2
         mkdir -p "${SCRIPT_DIR}/lib"
         mv "${temp_lib_dir}"/*.sh "${SCRIPT_DIR}/lib/"
         rmdir "${temp_lib_dir}"
@@ -346,11 +360,33 @@ _load_modules() {
     fi
 
     # Load all library modules
+    # Save SCRIPT_DIR to prevent pollution from sourced modules
+    local INSTALLER_SCRIPT_DIR="${SCRIPT_DIR}"
+    [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: Loading modules from: ${INSTALLER_SCRIPT_DIR}/lib" >&2
+
     for module in "${modules[@]}"; do
-        local module_path="${SCRIPT_DIR}/lib/${module}.sh"
+        local module_path="${INSTALLER_SCRIPT_DIR}/lib/${module}.sh"
+
         if [[ -f "${module_path}" ]]; then
+            # Use debug() after common.sh is loaded, echo before
+            if [[ "$module" == "common" ]]; then
+                [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: Loading module: ${module}.sh" >&2
+            else
+                [[ "${DEBUG:-0}" == "1" ]] && debug "Loading module: ${module}.sh"
+            fi
+
             # shellcheck source=/dev/null
             source "${module_path}"
+
+            # Restore SCRIPT_DIR after sourcing (modules may redefine it)
+            SCRIPT_DIR="${INSTALLER_SCRIPT_DIR}"
+
+            # Use debug() after common.sh is loaded
+            if [[ "$module" == "common" ]]; then
+                [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: Module ${module}.sh loaded, SCRIPT_DIR restored" >&2
+            else
+                [[ "${DEBUG:-0}" == "1" ]] && debug "Module ${module}.sh loaded, SCRIPT_DIR restored"
+            fi
         else
             echo "ERROR: Required module not found: ${module_path}"
             echo "Please ensure all lib/*.sh files are present."

@@ -140,15 +140,27 @@ if [[ -n "${LOG_LEVEL_FILTER}" ]]; then
   # Convert to uppercase for case-insensitive matching
   LOG_LEVEL_FILTER="${LOG_LEVEL_FILTER^^}"
 
-  # Validate against known levels
-  if [[ ! "${LOG_LEVELS[$LOG_LEVEL_FILTER]+_}" ]]; then
-    # Invalid level - warn and use safe default
-    echo "Warning: Invalid LOG_LEVEL_FILTER='${LOG_LEVEL_FILTER}'. Valid values: ERROR, WARN, INFO, DEBUG. Using INFO." >&2
-    LOG_LEVEL_FILTER="INFO"
-  fi
+  # Validate against known levels (use indirect expansion to avoid unbound variable in set -u)
+  case "${LOG_LEVEL_FILTER}" in
+    ERROR|WARN|INFO|DEBUG)
+      # Valid level
+      ;;
+    *)
+      # Invalid level - warn and use safe default
+      echo "Warning: Invalid LOG_LEVEL_FILTER='${LOG_LEVEL_FILTER}'. Valid values: ERROR, WARN, INFO, DEBUG. Using INFO." >&2
+      LOG_LEVEL_FILTER="INFO"
+      ;;
+  esac
 fi
 
-declare -r LOG_LEVEL_CURRENT="${LOG_LEVELS[${LOG_LEVEL_FILTER:-INFO}]:-2}"
+# Set current log level (use case to avoid array access issues with set -u)
+case "${LOG_LEVEL_FILTER:-INFO}" in
+  ERROR) declare -r LOG_LEVEL_CURRENT=0 ;;
+  WARN)  declare -r LOG_LEVEL_CURRENT=1 ;;
+  INFO)  declare -r LOG_LEVEL_CURRENT=2 ;;
+  DEBUG) declare -r LOG_LEVEL_CURRENT=3 ;;
+  *)     declare -r LOG_LEVEL_CURRENT=2 ;;  # Default to INFO
+esac
 
 # Get timestamp prefix if enabled
 _log_timestamp() {
@@ -193,7 +205,15 @@ log_json() {
 # Check if message should be logged based on level
 _should_log() {
   local msg_level="$1"
-  local msg_level_value="${LOG_LEVELS[$msg_level]:-2}"
+  # Map log level to numeric value (avoid array access in set -u mode)
+  local msg_level_value
+  case "$msg_level" in
+    ERROR) msg_level_value=0 ;;
+    WARN)  msg_level_value=1 ;;
+    INFO)  msg_level_value=2 ;;
+    DEBUG) msg_level_value=3 ;;
+    *)     msg_level_value=2 ;;  # Default to INFO level
+  esac
 
   [[ -z "${LOG_LEVEL_FILTER}" ]] && return 0
   [[ $msg_level_value -le $LOG_LEVEL_CURRENT ]] && return 0

@@ -58,7 +58,7 @@ start_service_with_retry() {
   while [[ $retry_count -lt $max_retries ]]; do
     # Attempt to start the service
     if systemctl start sing-box 2>&1; then
-      sleep "${SERVICE_WAIT_MEDIUM_SEC}"
+      sleep "${SERVICE_WAIT_MEDIUM_SEC:-2}"
       # Check if service is actually active
       if systemctl is-active sing-box >/dev/null 2>&1; then
         success "  ✓ sing-box service started successfully"
@@ -126,7 +126,7 @@ setup_service() {
     if systemctl is-active sing-box >/dev/null 2>&1; then
       break
     fi
-    sleep "${SERVICE_WAIT_SHORT_SEC}"
+    sleep "${SERVICE_WAIT_SHORT_SEC:-1}"
     ((waited++))
   done
 
@@ -174,7 +174,7 @@ validate_port_listening() {
 
     ((attempt++))
     if [[ $attempt -lt $max_attempts ]]; then
-      sleep "${SERVICE_WAIT_SHORT_SEC}"
+      sleep "${SERVICE_WAIT_SHORT_SEC:-1}"
     fi
   done
 
@@ -202,10 +202,10 @@ stop_service() {
     systemctl stop sing-box || warn "Failed to stop service gracefully"
 
     # Wait for service to fully stop
-    local max_wait="${SERVICE_STARTUP_MAX_WAIT_SEC}"
+    local max_wait="${SERVICE_STARTUP_MAX_WAIT_SEC:-10}"
     local waited=0
     while systemctl is-active sing-box >/dev/null 2>&1 && [[ $waited -lt $max_wait ]]; do
-      sleep "${SERVICE_WAIT_SHORT_SEC}"
+      sleep "${SERVICE_WAIT_SHORT_SEC:-1}"
       ((waited++))
     done
 

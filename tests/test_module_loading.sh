@@ -115,7 +115,7 @@ fi
 
 # Test 11: Check for module verification (file size check)
 test_start "Module verification includes size check"
-if grep -q '\[\[ "${file_size}" -lt 100 \]\]' "${INSTALL_SCRIPT}"; then
+if grep -q '\[\[ "${file_size}" -lt.*MIN_MODULE_FILE_SIZE' "${INSTALL_SCRIPT}"; then
     test_pass
 else
     test_fail "Size check not found"

@@ -151,8 +151,8 @@ verify_singbox_binary() {
         return 1
     }
 
-    # Ensure cleanup
-    trap 'rm -f "$checksum_file"' RETURN
+    # Ensure cleanup (use variable expansion at trap time to avoid unbound variable in set -u)
+    trap "rm -f \"$checksum_file\"" RETURN
 
     # Download checksum file
     if ! safe_http_get "$checksum_url" "$checksum_file" 2>/dev/null; then
