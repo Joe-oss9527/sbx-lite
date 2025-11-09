@@ -274,8 +274,8 @@ main() {
     echo "[1m[35m╚═══════════════════════════════════════════════════════╝[0m"
     echo
     echo "Total Tests: $((TESTS_PASSED + TESTS_FAILED))"
-    echo "[32mPassed: $TESTS_PASSED[0m"
-    echo "[31mFailed: $TESTS_FAILED[0m"
+    echo "[32mPassed: ${TESTS_PASSED}[0m"
+    echo "[31mFailed: ${TESTS_FAILED}[0m"
     echo
 
     # Print detailed results
