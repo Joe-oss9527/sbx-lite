@@ -8,6 +8,7 @@ One-click deployment script for sing-box proxy server with VLESS-REALITY support
 - **Multi-protocol** - VLESS-REALITY (default), WS-TLS, Hysteria2 (optional)
 - **Auto management** - Built-in backup, client export, QR codes
 - **Production ready** - sing-box 1.12.0+, encrypted backups, CI/CD tested
+- **Enterprise logging** - Debug mode, JSON output, log files, timestamps
 - **Easy sharing** - Generate client configs, QR codes, subscription links
 
 ## Quick Start
@@ -59,6 +60,15 @@ sbx check         # Validate configuration
 sbx log           # View error messages
 ```
 
+**Installation issues - Enable debug logging**
+```bash
+# Run with detailed debug output and timestamps
+DEBUG=1 LOG_TIMESTAMPS=1 bash <(curl -fsSL https://raw.githubusercontent.com/Joe-oss9527/sbx-lite/main/install_multi.sh)
+
+# Save debug log to file for sharing
+DEBUG=1 LOG_FILE=/tmp/install-debug.log bash <(curl -fsSL ...)
+```
+
 **v2rayN shows "connection failed"**
 Switch VLESS core from Xray to sing-box in client settings.
 
@@ -69,6 +79,21 @@ Re-run the installation command - it will detect existing installation and offer
 Script auto-selects alternative ports (24443, 24444, 24445) if defaults are occupied.
 
 ## Advanced Usage
+
+**Debugging & Logging**
+```bash
+# Debug mode with timestamps (troubleshooting)
+DEBUG=1 LOG_TIMESTAMPS=1 bash <(curl -fsSL ...)
+
+# Save installation log to file
+LOG_FILE=/var/log/sbx-install.log bash <(curl -fsSL ...)
+
+# JSON format for log analysis tools
+LOG_FORMAT=json bash <(curl -fsSL ...)
+
+# Show only errors (silent mode)
+LOG_LEVEL_FILTER=ERROR bash <(curl -fsSL ...) 2>/dev/null
+```
 
 **Backup and restore**
 ```bash
