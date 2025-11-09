@@ -467,6 +467,8 @@ SINGBOX_VERSION=v1.11.0-beta.1 bash install_multi.sh
 - **Log Level Filtering**:
   - `LOG_LEVEL_FILTER=LEVEL` - Filter logs by severity
   - Levels: `ERROR` (errors only), `WARN` (warnings+errors), `INFO` (default, all except debug), `DEBUG` (everything with DEBUG=1)
+  - **Case-insensitive**: `error`, `ERROR`, `Error` all work
+  - **Auto-validation**: Invalid values trigger warning and use safe default (INFO)
   - Hierarchical: ERROR < WARN < INFO < DEBUG
   - Example: `LOG_LEVEL_FILTER=ERROR bash install_multi.sh`
 

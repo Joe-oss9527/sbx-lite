@@ -134,6 +134,20 @@ LOG_LEVEL_FILTER="${LOG_LEVEL_FILTER:-}"
 
 # Log level values (lower number = higher priority)
 declare -r -A LOG_LEVELS=( [ERROR]=0 [WARN]=1 [INFO]=2 [DEBUG]=3 )
+
+# Normalize and validate LOG_LEVEL_FILTER
+if [[ -n "${LOG_LEVEL_FILTER}" ]]; then
+  # Convert to uppercase for case-insensitive matching
+  LOG_LEVEL_FILTER="${LOG_LEVEL_FILTER^^}"
+
+  # Validate against known levels
+  if [[ ! "${LOG_LEVELS[$LOG_LEVEL_FILTER]+_}" ]]; then
+    # Invalid level - warn and use safe default
+    echo "Warning: Invalid LOG_LEVEL_FILTER='${LOG_LEVEL_FILTER}'. Valid values: ERROR, WARN, INFO, DEBUG. Using INFO." >&2
+    LOG_LEVEL_FILTER="INFO"
+  fi
+fi
+
 declare -r LOG_LEVEL_CURRENT="${LOG_LEVELS[${LOG_LEVEL_FILTER:-INFO}]:-2}"
 
 # Get timestamp prefix if enabled

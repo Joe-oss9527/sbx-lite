@@ -186,6 +186,16 @@ test_log_level_filtering() {
     assert_not_contains "WARN level filters msg" "$output" "info"
     assert_contains "WARN level shows warn" "$output" "warning"
     assert_contains "WARN level shows err" "$output" "error"
+
+    # Test 4: Case-insensitive matching (lowercase warn)
+    output=$(LOG_LEVEL_FILTER=warn bash -c 'source lib/common.sh; msg "info"; warn "warning" 2>&1' 2>&1)
+    assert_not_contains "lowercase warn filters msg" "$output" "info"
+    assert_contains "lowercase warn shows warn" "$output" "warning"
+
+    # Test 5: Invalid level shows warning and uses safe default
+    output=$(LOG_LEVEL_FILTER=invalid bash -c 'source lib/common.sh; msg "test" 2>&1' 2>&1)
+    assert_contains "invalid level shows warning" "$output" "Invalid LOG_LEVEL_FILTER"
+    assert_contains "invalid level uses safe default" "$output" "[*] test"
 }
 
 #=============================================================================
