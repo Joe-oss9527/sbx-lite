@@ -115,27 +115,14 @@ allocate_port() {
       fi
 
       # Lock acquired - now check if port is actually in use
+      # port_in_use() already checks all interfaces via ss/lsof
       if port_in_use "$p"; then
         return 1
       fi
 
-      # Port is free according to port_in_use check
-      # Double-check with /dev/tcp test to ensure port is truly available
-      # This catches race conditions and unusual port states
-      timeout 1 bash -c "exec 3<>/dev/tcp/127.0.0.1/${p}" 2>/dev/null
-      local connect_result=$?
-
-      if [[ $connect_result -eq 0 ]]; then
-        # Connection succeeded - something is listening on this port
-        return 1
-      elif [[ $connect_result -eq 124 ]]; then
-        # Timeout occurred - port may be filtered/firewalled
-        # Treat as unavailable to be safe
-        return 1
-      fi
-
-      # Connection refused (expected for free port) or other error
-      # Port is available for use
+      # Port is available on all interfaces
+      # No need for additional /dev/tcp check which only tests localhost
+      # and can create race conditions on multi-interface systems
       echo "$p"
       return 0
 
