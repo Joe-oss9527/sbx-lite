@@ -104,9 +104,31 @@ case "$1" in
         # shellcheck source=/dev/null
         source /etc/sing-box/client-info.txt
 
+        # Validate required fields
+        missing_fields=()
+        has_warnings=0
+        [[ -z "${PUBLIC_KEY:-}" ]] && missing_fields+=("PUBLIC_KEY") && has_warnings=1
+        [[ -z "${UUID:-}" ]] && missing_fields+=("UUID") && has_warnings=1
+        [[ -z "${SHORT_ID:-}" ]] && missing_fields+=("SHORT_ID") && has_warnings=1
+        [[ -z "${DOMAIN:-}" ]] && missing_fields+=("DOMAIN") && has_warnings=1
+
         echo
         printf "${B}=== sing-box Configuration ===${N}\n"
-        echo "Domain    : ${DOMAIN}"
+
+        # Display warnings if any fields are missing
+        if [[ $has_warnings -eq 1 ]]; then
+            echo
+            echo -e "${R}[WARNING]${N} Missing required fields in client-info.txt:"
+            for field in "${missing_fields[@]}"; do
+                echo -e "  ${R}✗${N} $field"
+            done
+            echo
+            echo -e "${Y}[INFO]${N} Generated URIs may be invalid or incomplete."
+            echo -e "${Y}[INFO]${N} Please run: ${B}bash install_multi.sh${N} to reinstall."
+            echo
+        fi
+
+        echo "Domain    : ${DOMAIN:-N/A}"
         echo "Binary    : /usr/local/bin/sing-box"
         echo "Config    : /etc/sing-box/config.json"
         echo "Service   : systemctl status sing-box"
@@ -116,11 +138,16 @@ case "$1" in
         REALITY_PORT="${REALITY_PORT:-443}"
         SNI="${SNI:-www.microsoft.com}"
         echo "INBOUND   : VLESS-REALITY  ${REALITY_PORT}/tcp"
-        echo "  PublicKey = ${PUBLIC_KEY}"
-        echo "  Short ID  = ${SHORT_ID}"
-        echo "  UUID      = ${UUID}"
+        echo "  PublicKey = ${PUBLIC_KEY:-[MISSING]}"
+        echo "  Short ID  = ${SHORT_ID:-[MISSING]}"
+        echo "  UUID      = ${UUID:-[MISSING]}"
         URI_REAL="vless://${UUID}@${DOMAIN}:${REALITY_PORT}?encryption=none&security=reality&flow=xtls-rprx-vision&sni=${SNI}&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&type=tcp&fp=chrome#Reality-${DOMAIN}"
         echo "  URI       = ${URI_REAL}"
+
+        # Warn if URI has empty parameters
+        if echo "$URI_REAL" | grep -qE 'pbk=&|pbk=$|@:|//:'; then
+            echo -e "  ${R}⚠ WARNING:${N} URI has empty parameters and cannot be used"
+        fi
 
         # WebSocket (if cert exists)
         if [[ -n "${CERT_FULLCHAIN:-}" && -n "${CERT_KEY:-}" ]]; then

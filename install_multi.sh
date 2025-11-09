@@ -1014,6 +1014,29 @@ print_summary() {
         echo "  • Hysteria2 (port $HY2_PORT_CHOSEN)"
     fi
 
+    # Display connection URIs
+    echo
+    echo -e "${CYAN}=== Client Connection URIs ===${N}"
+    echo
+
+    # Reality URI (always present)
+    local uri_real="vless://${UUID}@${DOMAIN}:${REALITY_PORT_CHOSEN}?encryption=none&security=reality&flow=xtls-rprx-vision&sni=${SNI_DEFAULT}&pbk=${PUB}&sid=${SID}&type=tcp&fp=chrome#Reality-${DOMAIN}"
+    echo -e "${G}VLESS-Reality:${N}"
+    echo "  $uri_real"
+
+    # WS-TLS and Hysteria2 URIs (if not Reality-only mode)
+    if [[ "${REALITY_ONLY_MODE:-0}" != "1" && -n "${CERT_FULLCHAIN:-}" ]]; then
+        echo
+        local uri_ws="vless://${UUID}@${DOMAIN}:${WS_PORT_CHOSEN}?encryption=none&security=tls&type=ws&host=${DOMAIN}&path=/ws&sni=${DOMAIN}&fp=chrome#WS-TLS-${DOMAIN}"
+        echo -e "${G}VLESS-WS-TLS:${N}"
+        echo "  $uri_ws"
+
+        echo
+        local uri_hy2="hysteria2://${HY2_PASS}@${DOMAIN}:${HY2_PORT_CHOSEN}/?sni=${DOMAIN}&alpn=h3&insecure=0#Hysteria2-${DOMAIN}"
+        echo -e "${G}Hysteria2:${N}"
+        echo "  $uri_hy2"
+    fi
+
     echo
     echo -e "${Y}Management Commands:${N}"
     echo "  sbx info      - Show configuration and connection URIs"
@@ -1024,7 +1047,7 @@ print_summary() {
     echo "  sbx export    - Export client configurations"
     echo "  sbx help      - Show all commands"
     echo
-    echo -e "${G}For detailed configuration, run: ${B}sbx info${N}"
+    echo -e "${CYAN}💡 Tip:${N} Use '${B}sbx info${N}' to view this information again"
     echo
 }
 
