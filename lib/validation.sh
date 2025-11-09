@@ -32,7 +32,7 @@ sanitize_input() {
   # This avoids escaping issues with backticks in parameter expansion
   input="$(printf '%s' "$input" | tr -d ';|&`$()<>')"
   # Limit length after sanitization
-  input="${input:0:${MAX_INPUT_LENGTH}}"
+  input="${input:0:${MAX_INPUT_LENGTH:-256}}"
   printf '%s' "$input"
 }
 
@@ -48,7 +48,7 @@ validate_domain() {
   [[ -n "$domain" ]] || return 1
 
   # Check length (max 253 characters for FQDN)
-  [[ ${#domain} -le "${MAX_DOMAIN_LENGTH}" ]] || return 1
+  [[ ${#domain} -le "${MAX_DOMAIN_LENGTH:-253}" ]] || return 1
 
   # Must contain at least one dot (require domain.tld format)
   [[ "$domain" =~ \. ]] || return 1

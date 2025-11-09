@@ -231,7 +231,7 @@ restart_service() {
   fi
 
   systemctl restart sing-box || die "Failed to restart service"
-  sleep "${SERVICE_WAIT_MEDIUM_SEC}"
+  sleep "${SERVICE_WAIT_MEDIUM_SEC:-2}"
 
   if check_service_status; then
     success "  ✓ Service restarted successfully"
