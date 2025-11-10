@@ -136,22 +136,53 @@ test_validate_domain_invalid_domains() {
 
 test_validate_ip_address_valid_ips() {
     echo ""
-    echo "Testing validate_ip_address() - Valid IPs"
-    echo "-----------------------------------------"
+    echo "Testing validate_ip_address() - Valid Public IPs"
+    echo "------------------------------------------------"
 
-    assert_success "Localhost" "validate_ip_address '127.0.0.1'"
-    assert_success "Public IP" "validate_ip_address '8.8.8.8'"
-    assert_success "Private IP (10.x)" "validate_ip_address '10.0.0.1'"
-    assert_success "Private IP (172.16.x)" "validate_ip_address '172.16.0.1'"
-    assert_success "Private IP (192.168.x)" "validate_ip_address '192.168.1.1'"
-    assert_success "Max valid IP" "validate_ip_address '255.255.255.255'"
-    assert_success "Min valid IP" "validate_ip_address '0.0.0.0'"
+    assert_success "Public IP (Google DNS)" "validate_ip_address '8.8.8.8'"
+    assert_success "Public IP (Cloudflare)" "validate_ip_address '1.1.1.1'"
+    assert_success "Public IP (Quad9)" "validate_ip_address '9.9.9.9'"
+    assert_success "Valid public range" "validate_ip_address '123.45.67.89'"
+
+    echo ""
+    echo "Testing validate_ip_address() - Private IPs with ALLOW_PRIVATE_IP"
+    echo "-----------------------------------------------------------------"
+
+    # Private addresses should pass when explicitly allowed
+    assert_success "Private IP (10.x) with flag" "validate_ip_address '10.0.0.1' 'true'"
+    assert_success "Private IP (172.16.x) with flag" "validate_ip_address '172.16.0.1' 'true'"
+    assert_success "Private IP (192.168.x) with flag" "validate_ip_address '192.168.1.1' 'true'"
+    assert_success "Private IP with env var" "ALLOW_PRIVATE_IP=1 validate_ip_address '192.168.1.1'"
 }
 
 test_validate_ip_address_invalid_ips() {
     echo ""
-    echo "Testing validate_ip_address() - Invalid IPs"
-    echo "-------------------------------------------"
+    echo "Testing validate_ip_address() - Reserved Addresses (Always Rejected)"
+    echo "--------------------------------------------------------------------"
+
+    # Reserved addresses should always fail
+    assert_failure "Loopback (127.0.0.1)" "validate_ip_address '127.0.0.1'"
+    assert_failure "Loopback range" "validate_ip_address '127.1.2.3'"
+    assert_failure "Zero address (0.0.0.0)" "validate_ip_address '0.0.0.0'"
+    assert_failure "Zero network" "validate_ip_address '0.1.2.3'"
+    assert_failure "Multicast (224.0.0.1)" "validate_ip_address '224.0.0.1'"
+    assert_failure "Multicast range" "validate_ip_address '239.255.255.255'"
+    assert_failure "Reserved (240.0.0.1)" "validate_ip_address '240.0.0.1'"
+    assert_failure "Reserved max" "validate_ip_address '255.255.255.255'"
+
+    echo ""
+    echo "Testing validate_ip_address() - Private Addresses (Rejected by Default)"
+    echo "-----------------------------------------------------------------------"
+
+    # Private addresses should fail without ALLOW_PRIVATE_IP
+    assert_failure "Private IP (10.x)" "validate_ip_address '10.0.0.1'"
+    assert_failure "Private IP (172.16.x)" "validate_ip_address '172.16.0.1'"
+    assert_failure "Private IP (172.31.x)" "validate_ip_address '172.31.255.255'"
+    assert_failure "Private IP (192.168.x)" "validate_ip_address '192.168.1.1'"
+
+    echo ""
+    echo "Testing validate_ip_address() - Format Errors"
+    echo "---------------------------------------------"
 
     assert_failure "Octet > 255" "validate_ip_address '256.1.1.1'"
     assert_failure "Octet > 255 (second)" "validate_ip_address '1.256.1.1'"

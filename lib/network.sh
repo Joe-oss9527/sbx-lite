@@ -52,9 +52,29 @@ get_public_ip() {
   return 1
 }
 
-# Enhanced IP address validation with reserved address checks
+# Enhanced IP address validation with reserved and private address checks
+# Args:
+#   $1 - IP address to validate
+#   $2 - (optional) "true" to allow private addresses, or use ${ALLOW_PRIVATE_IP}
+# Returns:
+#   0 - valid IP address
+#   1 - invalid IP address (format, range, or policy)
+# Environment:
+#   ALLOW_PRIVATE_IP - Set to "1" or "true" to allow private addresses
+# Example:
+#   validate_ip_address "8.8.8.8"              # public IP (pass)
+#   validate_ip_address "192.168.1.1"          # private IP (fail by default)
+#   validate_ip_address "192.168.1.1" "true"   # private IP (pass with override)
+#   ALLOW_PRIVATE_IP=1 validate_ip_address "192.168.1.1"  # pass with env var
 validate_ip_address() {
   local ip="$1"
+  local allow_private="${2:-${ALLOW_PRIVATE_IP:-false}}"
+
+  # Normalize boolean values
+  case "${allow_private}" in
+    1|true|TRUE|yes|YES) allow_private="true" ;;
+    *) allow_private="false" ;;
+  esac
 
   # Basic format check
   [[ "$ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || return 1
@@ -72,11 +92,36 @@ validate_ip_address() {
     [[ $octet -le 255 ]] || return 1
   done
 
-  # Note: This function validates IP address format and range only.
-  # It intentionally does NOT filter reserved/private addresses
-  # (127.x.x.x, 0.x.x.x, etc.) to allow flexibility in testing
-  # and development scenarios. Callers should implement additional
-  # policy checks if needed for production deployments.
+  # Check for reserved addresses (always rejected)
+  # 0.0.0.0/8 - Current network (invalid for host addresses)
+  [[ "${octets[0]}" != "0" ]] || return 1
+
+  # 127.0.0.0/8 - Loopback addresses
+  [[ "${octets[0]}" != "127" ]] || return 1
+
+  # 224.0.0.0/4 - Multicast addresses (Class D)
+  [[ "${octets[0]}" -lt 224 || "${octets[0]}" -gt 239 ]] || return 1
+
+  # 240.0.0.0/4 - Reserved addresses (Class E)
+  [[ "${octets[0]}" -lt 240 ]] || return 1
+
+  # Check for private addresses (rejected unless allow_private=true)
+  if [[ "$allow_private" != "true" ]]; then
+    # 10.0.0.0/8 - Private network
+    if [[ "${octets[0]}" == "10" ]]; then
+      return 1
+    fi
+
+    # 172.16.0.0/12 - Private network
+    if [[ "${octets[0]}" == "172" && "${octets[1]}" -ge 16 && "${octets[1]}" -le 31 ]]; then
+      return 1
+    fi
+
+    # 192.168.0.0/16 - Private network
+    if [[ "${octets[0]}" == "192" && "${octets[1]}" == "168" ]]; then
+      return 1
+    fi
+  fi
 
   return 0
 }
