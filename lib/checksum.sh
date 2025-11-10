@@ -20,6 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Load dependencies
 source "${SCRIPT_DIR}/common.sh"
 source "${SCRIPT_DIR}/network.sh"
+source "${SCRIPT_DIR}/tools.sh"
 
 #==============================================================================
 # Checksum Verification Functions
@@ -65,14 +66,9 @@ verify_file_checksum() {
         return 1
     fi
 
-    # Calculate actual checksum using available tool
+    # Calculate actual checksum using tool abstraction
     local actual_sum=""
-    if command -v sha256sum >/dev/null 2>&1; then
-        actual_sum=$(sha256sum "$file_path" | awk '{print $1}')
-    elif command -v shasum >/dev/null 2>&1; then
-        actual_sum=$(shasum -a 256 "$file_path" | awk '{print $1}')
-    else
-        warn "No SHA256 tool available (sha256sum/shasum)"
+    if ! actual_sum=$(crypto_sha256 "$file_path" 2>/dev/null); then
         warn "Cannot verify checksum without SHA256 utility"
         return 1
     fi

@@ -299,8 +299,8 @@ _show_syntax_error() {
 # Smart module loader: downloads modules if not present (for one-liner install)
 _load_modules() {
     local github_repo="https://raw.githubusercontent.com/Joe-oss9527/sbx-lite/main"
-    # Module loading order: common must be first, retry before download
-    local modules=(common retry download network validation checksum version certificate caddy config service ui backup export)
+    # Module loading order: common must be first, tools after common, retry before download
+    local modules=(common tools retry download network validation checksum version certificate caddy config service ui backup export)
     local temp_lib_dir=""
 
     # Check if lib directory exists
