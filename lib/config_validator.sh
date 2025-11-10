@@ -473,9 +473,12 @@ validate_config_pipeline() {
     msg "  [6/6] Running sing-box binary check..."
     if [[ -x "${SB_BIN:-/usr/local/bin/sing-box}" ]]; then
         local sb_bin="${SB_BIN:-/usr/local/bin/sing-box}"
-        if ! "$sb_bin" check -c "$config_file" 2>&1 | grep -q "configuration ok" 2>/dev/null; then
+        # Rely on exit code rather than output text (future-proof, localization-safe)
+        local check_output
+        check_output=$("$sb_bin" check -c "$config_file" 2>&1)
+        if [[ $? -ne 0 ]]; then
             err "Configuration validation failed at step 6: sing-box check"
-            "$sb_bin" check -c "$config_file" 2>&1 || true
+            echo "$check_output" >&2
             return 1
         fi
         debug "sing-box binary validation passed"
