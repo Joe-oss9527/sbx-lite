@@ -40,6 +40,35 @@ sanitize_input() {
 # Domain and Network Validation
 #==============================================================================
 
+# Validate port number (canonical implementation)
+# Validates that port is numeric and within valid range (1-65535)
+# Args:
+#   $1 - port number to validate
+#   $2 - (optional) descriptive name for error messages (default: "Port")
+# Returns:
+#   0 - port is valid
+#   1 - port is invalid
+# Example:
+#   validate_port 443 "HTTPS Port" || die "Invalid HTTPS port"
+validate_port() {
+  local port="$1"
+  local port_name="${2:-Port}"
+
+  # Validate numeric
+  if [[ ! "$port" =~ ^[0-9]+$ ]]; then
+    err "${port_name} must be numeric: $port"
+    return 1
+  fi
+
+  # Validate range (1-65535)
+  if [[ "$port" -lt 1 || "$port" -gt 65535 ]]; then
+    err "${port_name} must be between 1-65535: $port"
+    return 1
+  fi
+
+  return 0
+}
+
 # Validate domain format with comprehensive checks
 validate_domain() {
   local domain="$1"
@@ -365,6 +394,6 @@ validate_json_syntax() {
 # Export Functions
 #==============================================================================
 
-export -f sanitize_input validate_domain validate_cert_files validate_env_vars
+export -f sanitize_input validate_port validate_domain validate_cert_files validate_env_vars
 export -f validate_short_id validate_reality_sni validate_menu_choice validate_yes_no
 export -f validate_singbox_config validate_json_syntax

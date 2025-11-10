@@ -5,6 +5,89 @@ All notable changes to sbx-lite will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - Phase 1: Critical Fixes
+
+### 🔧 Fixed
+#### Added Strict Mode to sbx-manager.sh (CRITICAL)
+- **File**: `bin/sbx-manager.sh`
+- **Changes**:
+  - Added `set -euo pipefail` for strict error handling
+  - Used safe expansion `${VAR:-default}` for `LIB_DIR`
+  - Added `local` declarations for all variables in case branches
+  - Quoted all variable references with `${VAR}` format
+  - Fixed retry counter with proper initialization
+- **Benefits**:
+  - Prevents silent failures in management tool
+  - Ensures proper error propagation
+  - Catches undefined variable usage early
+- **Testing**: Syntax validation passed, all management commands tested
+- **Ref**: Phase 1 Task 1.1 (CRITICAL priority)
+
+### ♻️ Refactored
+#### Unified Port Validation (HIGH)
+- **Files**: `lib/validation.sh`, `lib/network.sh`
+- **Changes**:
+  - Moved `validate_port()` from lib/network.sh to lib/validation.sh
+  - Enhanced function with optional `port_name` parameter for descriptive errors
+  - Added comprehensive documentation with usage examples
+  - Removed duplicate implementation
+  - Updated export lists in both modules
+- **Benefits**:
+  - Single source of truth for port validation
+  - Reduced code duplication
+  - Better error messages with context
+  - Improved maintainability
+- **Testing**: All 14 port validation unit tests pass
+- **Ref**: Phase 1 Task 1.2 (HIGH priority)
+
+#### Extracted File Size Utility Function (MEDIUM)
+- **Files**: `lib/common.sh`, `install_multi.sh`
+- **Changes**:
+  - Created `get_file_size()` function in lib/common.sh
+  - Supports both Linux (`stat -c%s`) and BSD/macOS (`stat -f%z`)
+  - Replaced 3 duplicated implementations in install_multi.sh (lines 80, 205, 394)
+  - Added comprehensive documentation
+  - Exported function for module use
+- **Benefits**:
+  - Eliminates code duplication (3 instances)
+  - Cross-platform compatibility
+  - Single source of truth for file operations
+  - Improved maintainability
+- **Testing**: Syntax validation passed, full install flow tested
+- **Ref**: Phase 1 Task 1.3 (MEDIUM priority)
+
+### ✨ Enhanced
+#### IP Address Validation with Security Filtering (MEDIUM)
+- **Files**: `lib/network.sh`, `tests/unit/test_network_validation.sh`
+- **Changes**:
+  - **Reserved Address Filtering** (always rejected):
+    - 0.0.0.0/8 - Current network (invalid for host addresses)
+    - 127.0.0.0/8 - Loopback addresses
+    - 224.0.0.0/4 - Multicast addresses (Class D)
+    - 240.0.0.0/4 - Reserved addresses (Class E)
+  - **Private Address Filtering** (configurable):
+    - 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+    - Optional parameter: `validate_ip_address "IP" "true"` allows private
+    - Environment variable: `ALLOW_PRIVATE_IP=1` for backward compatibility
+  - **Migration Support**: Default rejects private addresses for production security
+- **Test Updates**:
+  - Updated 28 IP validation tests for new behavior
+  - Added 8 new tests for reserved address filtering
+  - Added 4 new tests for private address parameter
+  - All 80 unit tests pass
+- **Benefits**:
+  - Enhanced security by preventing invalid/reserved addresses
+  - Flexible configuration for development/testing
+  - Comprehensive RFC compliance
+  - Better production defaults
+- **Ref**: Phase 1 Task 1.4 (MEDIUM priority)
+
+### 📊 Testing & Validation
+- **Unit Tests**: All 80 tests passing
+- **Syntax Validation**: All scripts verified
+- **Integration**: Full Phase 1 verification complete
+- **Code Quality**: Zero regressions introduced
+
 ## [2.2.0] - 2025-11-08
 
 ### ✨ Code Quality Improvements

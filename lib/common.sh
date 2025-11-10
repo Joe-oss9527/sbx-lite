@@ -350,6 +350,29 @@ safe_rm_temp() {
   [[ -d "$temp_path" ]] && rm -rf "$temp_path" 2>/dev/null || true
 }
 
+# Get file size in bytes (cross-platform)
+# Supports both Linux (stat -c%s) and BSD/macOS (stat -f%z)
+# Args:
+#   $1 - file path
+# Returns:
+#   File size in bytes, or "0" if file doesn't exist or error occurs
+# Example:
+#   size=$(get_file_size "/path/to/file")
+get_file_size() {
+  local file="$1"
+
+  # Validate file exists
+  [[ -f "$file" ]] || {
+    echo "0"
+    return 1
+  }
+
+  # Cross-platform file size retrieval
+  # Linux: stat -c%s
+  # BSD/macOS: stat -f%z
+  stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null || echo "0"
+}
+
 #==============================================================================
 # Cleanup Handler
 #==============================================================================
@@ -556,7 +579,7 @@ _init_colors
 trap cleanup EXIT INT TERM
 
 # Export functions for use in other modules
-export -f msg warn err info success debug die need_root have safe_rm_temp
+export -f msg warn err info success debug die need_root have safe_rm_temp get_file_size
 export -f log_json rotate_logs _log_timestamp _log_to_file _should_log
 export -f generate_uuid generate_reality_keypair generate_hex_string
 export -f generate_qr_code generate_all_qr_codes

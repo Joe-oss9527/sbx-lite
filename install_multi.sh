@@ -77,7 +77,7 @@ _download_single_module() {
 
     # Check file size
     local file_size
-    file_size=$(stat -c%s "${module_file}" 2>/dev/null || stat -f%z "${module_file}" 2>/dev/null || echo "0")
+    file_size=$(get_file_size "${module_file}")
     [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: ${module} file size: ${file_size} bytes" >&2
 
     if [[ "${file_size}" -lt "${MIN_MODULE_FILE_SIZE_BYTES}" ]]; then
@@ -202,7 +202,7 @@ _download_modules_sequential() {
 
         # Verify
         local file_size
-        file_size=$(stat -c%s "${module_file}" 2>/dev/null || stat -f%z "${module_file}" 2>/dev/null || echo "0")
+        file_size=$(get_file_size "${module_file}")
 
         if [[ ! -f "${module_file}" ]] || [[ "${file_size}" -lt "${MIN_MODULE_FILE_SIZE_BYTES}" ]]; then
             echo " ✗ VERIFY FAILED"
@@ -391,7 +391,7 @@ _load_modules() {
 
         # Check file size (full version should be >5KB, typically ~15KB)
         local mgr_size
-        mgr_size=$(stat -c%s "${manager_file}" 2>/dev/null || stat -f%z "${manager_file}" 2>/dev/null || echo "0")
+        mgr_size=$(get_file_size "${manager_file}")
         [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: sbx-manager.sh file size: ${mgr_size} bytes" >&2
 
         if [[ "${mgr_size}" -lt 5000 ]]; then
