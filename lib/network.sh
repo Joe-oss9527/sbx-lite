@@ -159,12 +159,6 @@ allocate_port() {
   fi
 }
 
-# Validate port number
-validate_port() {
-  local port="$1"
-  [[ "$port" =~ ^[1-9][0-9]{0,4}$ ]] && [ "$port" -le 65535 ] && [ "$port" -ge 1 ]
-}
-
 #==============================================================================
 # IPv6 Support Detection
 #==============================================================================
@@ -304,5 +298,5 @@ safe_http_get() {
 # Export Functions
 #==============================================================================
 
-export -f get_public_ip validate_ip_address port_in_use allocate_port validate_port
+export -f get_public_ip validate_ip_address port_in_use allocate_port
 export -f detect_ipv6_support choose_listen_address safe_http_get
