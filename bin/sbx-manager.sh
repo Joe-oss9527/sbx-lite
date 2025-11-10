@@ -178,51 +178,69 @@ case "$1" in
         ;;
 
     qr)
-        if [[ ! -f "/etc/sing-box/client-info.txt" ]]; then
-            echo -e "${R}[ERR]${N} Client info not found."
-            exit 1
-        fi
-
         if ! command -v qrencode >/dev/null 2>&1; then
             echo -e "${R}[ERR]${N} qrencode not installed. Install with: apt install qrencode"
             exit 1
         fi
 
-        # Load saved info
-        # shellcheck source=/dev/null
-        source /etc/sing-box/client-info.txt
-
-        # Set defaults for missing variables (consistent with 'info' command)
-        REALITY_PORT="${REALITY_PORT:-443}"
-        SNI="${SNI:-www.microsoft.com}"
-        WS_PORT="${WS_PORT:-8444}"
-        HY2_PORT="${HY2_PORT:-8443}"
+        # Use modular load_client_info() if available, otherwise fallback to inline
+        if command -v load_client_info >/dev/null 2>&1; then
+            # Use lib/export.sh function (DRY principle - single source of truth)
+            load_client_info
+        else
+            # Fallback: inline loading with defaults (graceful degradation)
+            if [[ ! -f "/etc/sing-box/client-info.txt" ]]; then
+                echo -e "${R}[ERR]${N} Client info not found."
+                exit 1
+            fi
+            # shellcheck source=/dev/null
+            source /etc/sing-box/client-info.txt
+            # Set defaults (same as lib/export.sh::load_client_info)
+            REALITY_PORT="${REALITY_PORT:-443}"
+            SNI="${SNI:-www.microsoft.com}"
+            WS_PORT="${WS_PORT:-8444}"
+            HY2_PORT="${HY2_PORT:-8443}"
+        fi
 
         echo -e "${B}=== Configuration QR Codes ===${N}"
 
         # Generate Reality QR code
         if [[ -n "$UUID" && -n "$DOMAIN" && -n "$PUBLIC_KEY" && -n "$SHORT_ID" ]]; then
-            URI_REAL="vless://${UUID}@${DOMAIN}:${REALITY_PORT}?encryption=none&security=reality&flow=xtls-rprx-vision&sni=${SNI}&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&type=tcp&fp=chrome#Reality-${DOMAIN}"
             echo
             echo -e "${G}VLESS-REALITY:${N}"
             echo "┌─────────────────────────────────────┐"
+            # Use export_uri() if available (DRY), otherwise generate inline
+            if command -v export_uri >/dev/null 2>&1; then
+                URI_REAL=$(export_uri reality)
+            else
+                # Fallback: inline URI generation
+                URI_REAL="vless://${UUID}@${DOMAIN}:${REALITY_PORT}?encryption=none&security=reality&flow=xtls-rprx-vision&sni=${SNI}&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&type=tcp&fp=chrome#Reality-${DOMAIN}"
+            fi
             qrencode -t UTF8 -m 0 "$URI_REAL" 2>/dev/null || echo "QR code generation failed"
             echo "└─────────────────────────────────────┘"
         fi
 
         # Generate WS-TLS QR code if certificates exist
         if [[ -n "$CERT_FULLCHAIN" && -n "$CERT_KEY" && -n "$UUID" && -n "$DOMAIN" ]]; then
-            URI_WS="vless://${UUID}@${DOMAIN}:${WS_PORT}?encryption=none&security=tls&type=ws&host=${DOMAIN}&path=/ws&sni=${DOMAIN}&fp=chrome#WS-TLS-${DOMAIN}"
             echo
             echo -e "${G}VLESS-WS-TLS:${N}"
             echo "┌─────────────────────────────────────┐"
+            if command -v export_uri >/dev/null 2>&1; then
+                URI_WS=$(export_uri ws)
+            else
+                URI_WS="vless://${UUID}@${DOMAIN}:${WS_PORT}?encryption=none&security=tls&type=ws&host=${DOMAIN}&path=/ws&sni=${DOMAIN}&fp=chrome#WS-TLS-${DOMAIN}"
+            fi
             qrencode -t UTF8 -m 0 "$URI_WS" 2>/dev/null || echo "QR code generation failed"
             echo "└─────────────────────────────────────┘"
 
-            URI_HY2="hysteria2://${HY2_PASS}@${DOMAIN}:${HY2_PORT}/?sni=${DOMAIN}&alpn=h3&insecure=0#Hysteria2-${DOMAIN}"
             echo
             echo -e "${G}Hysteria2:${N}"
             echo "┌─────────────────────────────────────┐"
+            if command -v export_uri >/dev/null 2>&1; then
+                URI_HY2=$(export_uri hy2)
+            else
+                URI_HY2="hysteria2://${HY2_PASS}@${DOMAIN}:${HY2_PORT}/?sni=${DOMAIN}&alpn=h3&insecure=0#Hysteria2-${DOMAIN}"
+            fi
             qrencode -t UTF8 -m 0 "$URI_HY2" 2>/dev/null || echo "QR code generation failed"
             echo "└─────────────────────────────────────┘"
         fi
