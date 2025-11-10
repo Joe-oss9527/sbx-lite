@@ -192,6 +192,12 @@ case "$1" in
         # shellcheck source=/dev/null
         source /etc/sing-box/client-info.txt
 
+        # Set defaults for missing variables (consistent with 'info' command)
+        REALITY_PORT="${REALITY_PORT:-443}"
+        SNI="${SNI:-www.microsoft.com}"
+        WS_PORT="${WS_PORT:-8444}"
+        HY2_PORT="${HY2_PORT:-8443}"
+
         echo -e "${B}=== Configuration QR Codes ===${N}"
 
         # Generate Reality QR code
