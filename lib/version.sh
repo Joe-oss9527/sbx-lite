@@ -45,6 +45,8 @@ source "${SCRIPT_DIR}/network.sh"
 #     - "vX.Y.Z-beta.N": Pre-release version (preserved as-is)
 #
 #   GITHUB_TOKEN (optional): GitHub API token for higher rate limits
+#   CUSTOM_GITHUB_API (optional): Custom GitHub API endpoint (default: https://api.github.com)
+#                                  Example: https://github.enterprise.local/api/v3
 #
 # Example:
 #   SINGBOX_VERSION=stable resolve_singbox_version
@@ -70,8 +72,11 @@ resolve_singbox_version() {
             # Fetch latest stable release (non-prerelease)
             msg "  Fetching latest stable release from GitHub..."
 
-            local api_url="https://api.github.com/repos/SagerNet/sing-box/releases/latest"
+            local github_api_base="${CUSTOM_GITHUB_API:-https://api.github.com}"
+            local api_url="${github_api_base}/repos/SagerNet/sing-box/releases/latest"
             local api_response
+
+            debug "Using GitHub API: $github_api_base"
 
             # Use GitHub API with optional token
             if [[ -n "${GITHUB_TOKEN:-}" ]]; then
@@ -108,8 +113,11 @@ resolve_singbox_version() {
             # Fetch absolute latest release (including pre-releases)
             msg "  Fetching latest release (including pre-releases) from GitHub..."
 
-            local api_url="https://api.github.com/repos/SagerNet/sing-box/releases"
+            local github_api_base="${CUSTOM_GITHUB_API:-https://api.github.com}"
+            local api_url="${github_api_base}/repos/SagerNet/sing-box/releases"
             local api_response
+
+            debug "Using GitHub API: $github_api_base"
 
             # Use GitHub API with optional token
             if [[ -n "${GITHUB_TOKEN:-}" ]]; then

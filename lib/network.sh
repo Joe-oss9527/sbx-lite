@@ -19,14 +19,30 @@ source "${_LIB_DIR}/common.sh"
 #==============================================================================
 
 # Auto-detect server public IP with multi-service redundancy
+#
+# Environment Variables:
+#   CUSTOM_IP_SERVICES - Space-separated list of custom IP detection services
+#                        Example: CUSTOM_IP_SERVICES="https://api.ipify.org https://icanhazip.com"
+#
+# Returns:
+#   Detected public IP address on success, exits with error on failure
 get_public_ip() {
   local ip="" service
-  local services=(
-    "https://ipv4.icanhazip.com"
-    "https://api.ipify.org"
-    "https://ifconfig.me/ip"
-    "https://ipinfo.io/ip"
-  )
+  local services=()
+
+  # Use custom IP services if provided, otherwise use defaults
+  if [[ -n "${CUSTOM_IP_SERVICES:-}" ]]; then
+    debug "Using custom IP detection services: $CUSTOM_IP_SERVICES"
+    # Convert space-separated string to array
+    read -ra services <<< "$CUSTOM_IP_SERVICES"
+  else
+    services=(
+      "https://ipv4.icanhazip.com"
+      "https://api.ipify.org"
+      "https://ifconfig.me/ip"
+      "https://ipinfo.io/ip"
+    )
+  fi
 
   # Try multiple IP detection services for redundancy
   for service in "${services[@]}"; do
