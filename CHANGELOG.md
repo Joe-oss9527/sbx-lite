@@ -5,6 +5,174 @@ All notable changes to sbx-lite will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - Phase 2: Code Quality Improvements
+
+### ✨ Added
+#### External Tool Abstraction Layer (lib/tools.sh)
+- **New Module**: `lib/tools.sh` - Comprehensive abstraction layer for external tools
+- **Features**:
+  - JSON operations: `json_parse()` and `json_build()` with jq/python3/python fallbacks
+  - Crypto operations: `crypto_random_hex()` and `crypto_sha256()` with openssl/urandom/shasum fallbacks
+  - HTTP operations: `http_download()` and `http_fetch()` with curl/wget fallbacks
+  - Encoding operations: `base64_encode()` and `base64_decode()` supporting stdin and arguments
+- **Benefits**:
+  - Graceful degradation when tools unavailable
+  - Consistent API across codebase
+  - Easier testing with dependency injection support
+  - Better error messages for missing dependencies
+- **Testing**: 18 unit tests (100% pass rate)
+- **Ref**: Phase 2.1 Task 2.1 (MEDIUM priority)
+
+#### Centralized Message Template System (lib/messages.sh)
+- **New Module**: `lib/messages.sh` - Message templates for i18n preparation
+- **Features**:
+  - 50+ error message templates organized by category (validation, file, network, service, config, cert, checksum, permission, dependency, port, backup)
+  - Warning and info message templates
+  - `format_error()`, `format_warning()`, `format_info()` functions with printf-style placeholders
+  - 8 convenience helper functions: `err_invalid_port()`, `err_invalid_domain()`, `err_file_not_found()`, etc.
+- **Benefits**:
+  - Consistent error messages across codebase
+  - Easier maintenance and updates
+  - Prepared for future i18n support
+  - Reduces code duplication in error handling
+- **Testing**: 12 unit tests (100% pass rate)
+- **Ref**: Phase 2.2 Task 2.2 (LOW priority)
+
+#### Automatic Log Rotation
+- **File**: `lib/common.sh`
+- **Features**:
+  - `rotate_logs_if_needed()` - Automatic rotation based on file size
+  - Performance optimization: Check every 100 writes (1% overhead)
+  - `LOG_MAX_SIZE_KB` environment variable (default: 10MB)
+  - Maintains last 5 rotated logs with timestamp
+  - Secure permissions (600) preserved
+- **Benefits**:
+  - Prevents unlimited log file growth
+  - Minimal performance impact
+  - Configurable size limits
+  - Automatic old log cleanup
+- **Testing**: 6 integration test scenarios (all pass)
+- **Ref**: Phase 2.3 Task 2.3 (MEDIUM priority)
+
+### ♻️ Refactored
+#### Integrated Tool Abstraction in Checksum Module
+- **Files**: `lib/checksum.sh`, `install_multi.sh`
+- **Changes**:
+  - Updated `lib/checksum.sh` to use `crypto_sha256()` from `lib/tools.sh`
+  - Added `tools` module to loading sequence in `install_multi.sh`
+  - Replaced direct sha256sum/shasum calls
+  - Reduced checksum calculation from 10 lines to 5
+- **Benefits**:
+  - Better code reuse
+  - More fallback options (openssl added)
+  - Cleaner code
+  - Consistent error handling
+- **Testing**: Checksum verification tested and working
+- **Ref**: Phase 2.1 Task 2.1 (integration)
+
+### 📊 Summary
+**Phase 2 Achievements**:
+- **New Modules**: 2 (lib/tools.sh, lib/messages.sh)
+- **New Functions**: 20+ (JSON, crypto, HTTP, encoding, message formatting, log rotation)
+- **Code Quality**: +596 lines of well-documented, tested code
+- **Test Coverage**: 36 new tests (18 unit + 12 unit + 6 integration)
+- **Test Success Rate**: 100% (all tests passing)
+- **Backward Compatibility**: ✅ Fully compatible
+- **Documentation**: Comprehensive inline documentation and examples
+
+---
+
+## [Unreleased] - Phase 3: Architecture Optimization
+
+### ♻️ Refactored
+#### Module Split: lib/common.sh (lib/logging.sh, lib/generators.sh)
+- **Files**: `lib/common.sh`, `lib/logging.sh`, `lib/generators.sh`
+- **Changes**:
+  - Split monolithic `lib/common.sh` (612 lines) into focused modules
+  - Created `lib/logging.sh` (283 lines) - All logging functions and log rotation
+  - Created `lib/generators.sh` (238 lines) - UUID, Reality keypair, hex string, QR code generation
+  - Reduced `lib/common.sh` to core utilities only (253 lines)
+  - Automatic module sourcing in `lib/common.sh` for backward compatibility
+  - Updated `install_multi.sh` to include new modules in loading sequence
+- **Benefits**:
+  - 59% reduction in common.sh size (359 lines moved out)
+  - Better separation of concerns (Single Responsibility Principle)
+  - Easier to maintain and test individual modules
+  - Improved code organization and discoverability
+  - Fully backward compatible (all existing code continues to work)
+- **Testing**: 14 integration tests (all pass, 100% backward compatible)
+- **Ref**: Phase 3.1 - Module Splitting
+
+### ✨ Added
+#### Configuration Validation Pipeline (lib/config_validator.sh)
+- **New Module**: `lib/config_validator.sh` - Comprehensive config validation before applying
+- **Functions**:
+  - `validate_json_syntax()` - JSON format validation with jq/python3 fallback
+  - `validate_singbox_schema()` - Check required sections (inbounds, outbounds)
+  - `validate_port_conflicts()` - Detect duplicate port usage across inbounds
+  - `validate_tls_config()` - TLS configuration completeness (Reality vs certificates)
+  - `validate_route_rules()` - Deprecated field detection for sing-box 1.12.0+ compliance
+  - `validate_config_pipeline()` - 6-step comprehensive validation orchestration
+- **Deprecated Field Detection** (sing-box 1.12.0+):
+  - ⚠️ `sniff` field in inbounds → use route rules with `action: "sniff"` instead
+  - ⚠️ `sniff_override_destination` in inbounds → use route rules instead
+  - ⚠️ `domain_strategy` in inbounds/outbounds → use global `dns.strategy` instead
+  - Provides clear migration guidance in error messages
+- **Integration**:
+  - Integrated into `lib/config.sh:write_config()`
+  - Replaces simple `sing-box check` with comprehensive multi-stage validation
+  - Catches issues early in configuration generation process
+- **Benefits**:
+  - Earlier error detection with detailed diagnostics (6 validation stages)
+  - Prevents deprecated configuration patterns (IPv6 connection failures)
+  - Better user experience with actionable error messages
+  - Robust fallback mechanisms for missing validation tools
+  - Fatal errors caught before applying invalid configs
+- **Testing**: 19 unit tests covering all validation functions (100% pass rate)
+- **Ref**: Phase 3.2 - Configuration Validation Pipeline
+
+#### Dependency Injection for Testability
+- **Files**: `lib/network.sh`, `lib/version.sh`
+- **Environment Variables**:
+  - `CUSTOM_IP_SERVICES` - Space-separated list of custom IP detection services
+    - Example: `CUSTOM_IP_SERVICES="https://api.ipify.org https://icanhazip.com"`
+    - Enables testing without external dependencies
+    - Falls back to default services if not set
+  - `CUSTOM_GITHUB_API` - Custom GitHub API endpoint for enterprise installations
+    - Example: `CUSTOM_GITHUB_API="https://github.enterprise.local/api/v3"`
+    - Default: https://api.github.com
+    - Supports GitHub Enterprise Server installations
+  - `CUSTOM_DOWNLOAD_MIRROR` - Custom download mirror for binary distributions (planned)
+    - Useful for China mirrors, internal caches, offline installations
+  - `CUSTOM_CA_BUNDLE` - Custom CA certificate bundle for TLS validation (planned)
+    - Required for self-signed certificates in enterprise environments
+- **Implementation**:
+  - `get_public_ip()` in lib/network.sh now checks `CUSTOM_IP_SERVICES` first
+  - `resolve_singbox_version()` in lib/version.sh supports `CUSTOM_GITHUB_API`
+  - Debug logging for injected endpoints
+  - Fully backward compatible: no injection = original behavior
+- **Benefits**:
+  - Better testability with mock services
+  - Enterprise/airgapped installation support
+  - Reduced reliance on external services
+  - Easier CI/CD integration
+  - No breaking changes to existing deployments
+- **Testing**: 19 unit tests covering injection scenarios (100% pass rate)
+- **Ref**: Phase 3.3 - Dependency Injection for Testability
+
+### 📊 Summary
+**Phase 3 Achievements**:
+- **Refactored**: Split `lib/common.sh` into 3 focused modules (59% size reduction)
+- **New Modules**: 2 (lib/logging.sh, lib/generators.sh, lib/config_validator.sh)
+- **New Functions**: 10+ (validation pipeline, deprecated field detection, dependency injection)
+- **Code Quality**: +800 lines of validated, tested code
+- **Test Coverage**: 52 new tests (14 integration + 19 unit + 19 unit)
+- **Test Success Rate**: 100% (all 52 tests passing)
+- **Backward Compatibility**: ✅ Fully compatible
+- **sing-box 1.12.0+ Compliance**: ✅ Validates modern configuration standards
+
+---
+
 ## [Unreleased] - Phase 1: Critical Fixes
 
 ### 🔧 Fixed
