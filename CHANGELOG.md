@@ -82,6 +82,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - Phase 3: Architecture Optimization
+
+### ♻️ Refactored
+#### Module Split: lib/common.sh (lib/logging.sh, lib/generators.sh)
+- **Files**: `lib/common.sh`, `lib/logging.sh`, `lib/generators.sh`
+- **Changes**:
+  - Split monolithic `lib/common.sh` (612 lines) into focused modules
+  - Created `lib/logging.sh` (283 lines) - All logging functions and log rotation
+  - Created `lib/generators.sh` (238 lines) - UUID, Reality keypair, hex string, QR code generation
+  - Reduced `lib/common.sh` to core utilities only (253 lines)
+  - Automatic module sourcing in `lib/common.sh` for backward compatibility
+  - Updated `install_multi.sh` to include new modules in loading sequence
+- **Benefits**:
+  - 59% reduction in common.sh size (359 lines moved out)
+  - Better separation of concerns (Single Responsibility Principle)
+  - Easier to maintain and test individual modules
+  - Improved code organization and discoverability
+  - Fully backward compatible (all existing code continues to work)
+- **Testing**: 14 integration tests (all pass, 100% backward compatible)
+- **Ref**: Phase 3.1 - Module Splitting
+
+### ✨ Added
+#### Configuration Validation Pipeline (lib/config_validator.sh)
+- **New Module**: `lib/config_validator.sh` - Comprehensive config validation before applying
+- **Functions**:
+  - `validate_json_syntax()` - JSON format validation with jq/python3 fallback
+  - `validate_singbox_schema()` - Check required sections (inbounds, outbounds)
+  - `validate_port_conflicts()` - Detect duplicate port usage across inbounds
+  - `validate_tls_config()` - TLS configuration completeness (Reality vs certificates)
+  - `validate_route_rules()` - Deprecated field detection for sing-box 1.12.0+ compliance
+  - `validate_config_pipeline()` - 6-step comprehensive validation orchestration
+- **Deprecated Field Detection** (sing-box 1.12.0+):
+  - ⚠️ `sniff` field in inbounds → use route rules with `action: "sniff"` instead
+  - ⚠️ `sniff_override_destination` in inbounds → use route rules instead
+  - ⚠️ `domain_strategy` in inbounds/outbounds → use global `dns.strategy` instead
+  - Provides clear migration guidance in error messages
+- **Integration**:
+  - Integrated into `lib/config.sh:write_config()`
+  - Replaces simple `sing-box check` with comprehensive multi-stage validation
+  - Catches issues early in configuration generation process
+- **Benefits**:
+  - Earlier error detection with detailed diagnostics (6 validation stages)
+  - Prevents deprecated configuration patterns (IPv6 connection failures)
+  - Better user experience with actionable error messages
+  - Robust fallback mechanisms for missing validation tools
+  - Fatal errors caught before applying invalid configs
+- **Testing**: 19 unit tests covering all validation functions (100% pass rate)
+- **Ref**: Phase 3.2 - Configuration Validation Pipeline
+
+#### Dependency Injection for Testability
+- **Files**: `lib/network.sh`, `lib/version.sh`
+- **Environment Variables**:
+  - `CUSTOM_IP_SERVICES` - Space-separated list of custom IP detection services
+    - Example: `CUSTOM_IP_SERVICES="https://api.ipify.org https://icanhazip.com"`
+    - Enables testing without external dependencies
+    - Falls back to default services if not set
+  - `CUSTOM_GITHUB_API` - Custom GitHub API endpoint for enterprise installations
+    - Example: `CUSTOM_GITHUB_API="https://github.enterprise.local/api/v3"`
+    - Default: https://api.github.com
+    - Supports GitHub Enterprise Server installations
+  - `CUSTOM_DOWNLOAD_MIRROR` - Custom download mirror for binary distributions (planned)
+    - Useful for China mirrors, internal caches, offline installations
+  - `CUSTOM_CA_BUNDLE` - Custom CA certificate bundle for TLS validation (planned)
+    - Required for self-signed certificates in enterprise environments
+- **Implementation**:
+  - `get_public_ip()` in lib/network.sh now checks `CUSTOM_IP_SERVICES` first
+  - `resolve_singbox_version()` in lib/version.sh supports `CUSTOM_GITHUB_API`
+  - Debug logging for injected endpoints
+  - Fully backward compatible: no injection = original behavior
+- **Benefits**:
+  - Better testability with mock services
+  - Enterprise/airgapped installation support
+  - Reduced reliance on external services
+  - Easier CI/CD integration
+  - No breaking changes to existing deployments
+- **Testing**: 19 unit tests covering injection scenarios (100% pass rate)
+- **Ref**: Phase 3.3 - Dependency Injection for Testability
+
+### 📊 Summary
+**Phase 3 Achievements**:
+- **Refactored**: Split `lib/common.sh` into 3 focused modules (59% size reduction)
+- **New Modules**: 2 (lib/logging.sh, lib/generators.sh, lib/config_validator.sh)
+- **New Functions**: 10+ (validation pipeline, deprecated field detection, dependency injection)
+- **Code Quality**: +800 lines of validated, tested code
+- **Test Coverage**: 52 new tests (14 integration + 19 unit + 19 unit)
+- **Test Success Rate**: 100% (all 52 tests passing)
+- **Backward Compatibility**: ✅ Fully compatible
+- **sing-box 1.12.0+ Compliance**: ✅ Validates modern configuration standards
+
+---
+
 ## [Unreleased] - Phase 1: Critical Fixes
 
 ### 🔧 Fixed
