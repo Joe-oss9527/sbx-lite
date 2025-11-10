@@ -131,6 +131,8 @@ LOG_TIMESTAMPS="${LOG_TIMESTAMPS:-0}"
 LOG_FORMAT="${LOG_FORMAT:-text}"
 LOG_FILE="${LOG_FILE:-}"
 LOG_LEVEL_FILTER="${LOG_LEVEL_FILTER:-}"
+LOG_MAX_SIZE_KB="${LOG_MAX_SIZE_KB:-10240}"  # Default 10MB
+LOG_WRITE_COUNT=0  # Counter for periodic rotation checks
 
 # Log level values (lower number = higher priority)
 declare -r -A LOG_LEVELS=( [ERROR]=0 [WARN]=1 [INFO]=2 [DEBUG]=3 )
@@ -170,6 +172,12 @@ _log_timestamp() {
 # Write to log file if configured
 _log_to_file() {
   [[ -z "${LOG_FILE}" ]] && return 0
+
+  # Periodic rotation check (every 100 writes to minimize overhead)
+  LOG_WRITE_COUNT=$((LOG_WRITE_COUNT + 1))
+  if [[ $((LOG_WRITE_COUNT % 100)) == 0 ]]; then
+    rotate_logs_if_needed
+  fi
 
   # Create log file with secure permissions on first write
   if [[ ! -f "${LOG_FILE}" ]]; then
@@ -302,6 +310,25 @@ debug() {
 die() {
   err "$*"
   exit 1
+}
+
+# Check if log rotation is needed and rotate if necessary
+# This function is called periodically from _log_to_file to avoid
+# checking file size on every log write (performance optimization)
+rotate_logs_if_needed() {
+  local log_file="${LOG_FILE:-}"
+  local max_size_kb="${LOG_MAX_SIZE_KB:-10240}"
+
+  [[ -z "$log_file" || ! -f "$log_file" ]] && return 0
+
+  # Get file size in KB
+  local file_size_kb
+  file_size_kb=$(du -k "$log_file" 2>/dev/null | cut -f1) || return 0
+
+  # Only rotate if file exceeds max size
+  if [[ ${file_size_kb:-0} -gt $max_size_kb ]]; then
+    rotate_logs "$log_file" "$max_size_kb"
+  fi
 }
 
 # Log rotation helper
@@ -580,6 +607,6 @@ trap cleanup EXIT INT TERM
 
 # Export functions for use in other modules
 export -f msg warn err info success debug die need_root have safe_rm_temp get_file_size
-export -f log_json rotate_logs _log_timestamp _log_to_file _should_log
+export -f log_json rotate_logs rotate_logs_if_needed _log_timestamp _log_to_file _should_log
 export -f generate_uuid generate_reality_keypair generate_hex_string
 export -f generate_qr_code generate_all_qr_codes
