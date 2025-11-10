@@ -1,6 +1,6 @@
 # Makefile for sbx-lite development
 
-.PHONY: all check test lint syntax security install-hooks clean help
+.PHONY: all check test lint syntax security coverage benchmark install-hooks clean help
 
 # Default target
 all: check
@@ -11,10 +11,12 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  check         - Run all checks (lint + syntax + security)"
+	@echo "  test          - Run unit and integration tests"
+	@echo "  coverage      - Generate code coverage report"
+	@echo "  benchmark     - Run performance benchmarks"
 	@echo "  lint          - Run ShellCheck linting"
 	@echo "  syntax        - Validate bash syntax"
 	@echo "  security      - Run security checks"
-	@echo "  test          - Run unit tests"
 	@echo "  install-hooks - Install git pre-commit hooks"
 	@echo "  clean         - Clean temporary files"
 	@echo ""
@@ -58,14 +60,29 @@ security:
 	}
 	@echo "✓ Security checks passed"
 
-# Run tests (placeholder for future test framework)
+# Run unit and integration tests
 test:
-	@echo "→ Running tests..."
-	@if [ -f tests/run-tests.sh ]; then \
-		bash tests/run-tests.sh; \
-	else \
-		echo "ℹ  No tests configured yet"; \
-	fi
+	@echo "→ Running test suite..."
+	@bash tests/test-runner.sh || exit 1
+	@echo "✓ All tests passed"
+
+# Generate code coverage report
+coverage:
+	@echo "→ Generating coverage report..."
+	@bash tests/coverage.sh generate
+	@echo "✓ Coverage report generated"
+
+# Run performance benchmarks
+benchmark:
+	@echo "→ Running performance benchmarks..."
+	@bash tests/benchmark.sh quick
+	@echo "✓ Benchmarks complete"
+
+# Full benchmark suite (more iterations)
+benchmark-full:
+	@echo "→ Running full benchmark suite..."
+	@BENCHMARK_ITERATIONS=1000 bash tests/benchmark.sh
+	@echo "✓ Full benchmarks complete"
 
 # Install pre-commit hook
 install-hooks:
