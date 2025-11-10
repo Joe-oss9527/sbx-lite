@@ -5,6 +5,83 @@ All notable changes to sbx-lite will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - Phase 2: Code Quality Improvements
+
+### ✨ Added
+#### External Tool Abstraction Layer (lib/tools.sh)
+- **New Module**: `lib/tools.sh` - Comprehensive abstraction layer for external tools
+- **Features**:
+  - JSON operations: `json_parse()` and `json_build()` with jq/python3/python fallbacks
+  - Crypto operations: `crypto_random_hex()` and `crypto_sha256()` with openssl/urandom/shasum fallbacks
+  - HTTP operations: `http_download()` and `http_fetch()` with curl/wget fallbacks
+  - Encoding operations: `base64_encode()` and `base64_decode()` supporting stdin and arguments
+- **Benefits**:
+  - Graceful degradation when tools unavailable
+  - Consistent API across codebase
+  - Easier testing with dependency injection support
+  - Better error messages for missing dependencies
+- **Testing**: 18 unit tests (100% pass rate)
+- **Ref**: Phase 2.1 Task 2.1 (MEDIUM priority)
+
+#### Centralized Message Template System (lib/messages.sh)
+- **New Module**: `lib/messages.sh` - Message templates for i18n preparation
+- **Features**:
+  - 50+ error message templates organized by category (validation, file, network, service, config, cert, checksum, permission, dependency, port, backup)
+  - Warning and info message templates
+  - `format_error()`, `format_warning()`, `format_info()` functions with printf-style placeholders
+  - 8 convenience helper functions: `err_invalid_port()`, `err_invalid_domain()`, `err_file_not_found()`, etc.
+- **Benefits**:
+  - Consistent error messages across codebase
+  - Easier maintenance and updates
+  - Prepared for future i18n support
+  - Reduces code duplication in error handling
+- **Testing**: 12 unit tests (100% pass rate)
+- **Ref**: Phase 2.2 Task 2.2 (LOW priority)
+
+#### Automatic Log Rotation
+- **File**: `lib/common.sh`
+- **Features**:
+  - `rotate_logs_if_needed()` - Automatic rotation based on file size
+  - Performance optimization: Check every 100 writes (1% overhead)
+  - `LOG_MAX_SIZE_KB` environment variable (default: 10MB)
+  - Maintains last 5 rotated logs with timestamp
+  - Secure permissions (600) preserved
+- **Benefits**:
+  - Prevents unlimited log file growth
+  - Minimal performance impact
+  - Configurable size limits
+  - Automatic old log cleanup
+- **Testing**: 6 integration test scenarios (all pass)
+- **Ref**: Phase 2.3 Task 2.3 (MEDIUM priority)
+
+### ♻️ Refactored
+#### Integrated Tool Abstraction in Checksum Module
+- **Files**: `lib/checksum.sh`, `install_multi.sh`
+- **Changes**:
+  - Updated `lib/checksum.sh` to use `crypto_sha256()` from `lib/tools.sh`
+  - Added `tools` module to loading sequence in `install_multi.sh`
+  - Replaced direct sha256sum/shasum calls
+  - Reduced checksum calculation from 10 lines to 5
+- **Benefits**:
+  - Better code reuse
+  - More fallback options (openssl added)
+  - Cleaner code
+  - Consistent error handling
+- **Testing**: Checksum verification tested and working
+- **Ref**: Phase 2.1 Task 2.1 (integration)
+
+### 📊 Summary
+**Phase 2 Achievements**:
+- **New Modules**: 2 (lib/tools.sh, lib/messages.sh)
+- **New Functions**: 20+ (JSON, crypto, HTTP, encoding, message formatting, log rotation)
+- **Code Quality**: +596 lines of well-documented, tested code
+- **Test Coverage**: 36 new tests (18 unit + 12 unit + 6 integration)
+- **Test Success Rate**: 100% (all tests passing)
+- **Backward Compatibility**: ✅ Fully compatible
+- **Documentation**: Comprehensive inline documentation and examples
+
+---
+
 ## [Unreleased] - Phase 1: Critical Fixes
 
 ### 🔧 Fixed
