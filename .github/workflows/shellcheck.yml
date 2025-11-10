@@ -21,8 +21,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
+        # Submodules not needed for code quality checks
 
       - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@master
