@@ -23,6 +23,12 @@ load_client_info() {
   [[ -f "$CLIENT_INFO" ]] || die "Client info not found. Run: sbx info"
   # shellcheck source=/dev/null
   source "$CLIENT_INFO"
+
+  # Set defaults for missing variables to ensure valid URIs
+  REALITY_PORT="${REALITY_PORT:-443}"
+  SNI="${SNI:-www.microsoft.com}"
+  WS_PORT="${WS_PORT:-8444}"
+  HY2_PORT="${HY2_PORT:-8443}"
 }
 
 #==============================================================================
