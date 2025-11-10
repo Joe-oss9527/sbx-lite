@@ -17,6 +17,8 @@ source "${_LIB_DIR}/common.sh"
 source "${_LIB_DIR}/network.sh"
 # shellcheck source=lib/validation.sh
 source "${_LIB_DIR}/validation.sh"
+# shellcheck source=lib/config_validator.sh
+source "${_LIB_DIR}/config_validator.sh"
 
 #==============================================================================
 # Configuration Variables Validation
@@ -433,10 +435,9 @@ write_config() {
   echo "$base_config" > "$temp_conf" || \
     die "Failed to write configuration to temporary file"
 
-  # Validate configuration syntax before applying
-  if ! "$SB_BIN" check -c "$temp_conf" >/dev/null 2>&1; then
-    err "Configuration validation failed:"
-    "$SB_BIN" check -c "$temp_conf" 2>&1 | head -20
+  # Run comprehensive validation pipeline before applying
+  if ! validate_config_pipeline "$temp_conf"; then
+    err "Configuration validation failed. See errors above."
     die "Generated configuration is invalid. This is a bug in the script."
   fi
 

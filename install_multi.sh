@@ -300,7 +300,7 @@ _show_syntax_error() {
 _load_modules() {
     local github_repo="https://raw.githubusercontent.com/Joe-oss9527/sbx-lite/main"
     # Module loading order: common loads logging and generators, tools after common
-    local modules=(common logging generators tools retry download network validation checksum version certificate caddy config service ui backup export messages)
+    local modules=(common logging generators tools retry download network validation checksum version certificate caddy config config_validator service ui backup export messages)
     local temp_lib_dir=""
 
     # Check if lib directory exists
