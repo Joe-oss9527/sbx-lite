@@ -11,9 +11,9 @@ readonly _SBX_SERVICE_LOADED=1
 
 # Source dependencies
 _LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
+# shellcheck disable=SC1091
 source "${_LIB_DIR}/common.sh"
-# shellcheck source=lib/network.sh
+# shellcheck disable=SC1091
 source "${_LIB_DIR}/network.sh"
 
 #==============================================================================

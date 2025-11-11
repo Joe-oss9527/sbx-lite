@@ -11,13 +11,13 @@ readonly _SBX_CERTIFICATE_LOADED=1
 
 # Source dependencies
 _LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
+# shellcheck disable=SC1091
 source "${_LIB_DIR}/common.sh"
-# shellcheck source=lib/network.sh
+# shellcheck disable=SC1091
 source "${_LIB_DIR}/network.sh"
-# shellcheck source=lib/validation.sh
+# shellcheck disable=SC1091
 source "${_LIB_DIR}/validation.sh"
-# shellcheck source=lib/caddy.sh
+# shellcheck disable=SC1091
 source "${_LIB_DIR}/caddy.sh"
 
 #==============================================================================
