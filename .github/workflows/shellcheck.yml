@@ -149,17 +149,40 @@ jobs:
 
       - name: Install test dependencies
         run: |
+          echo "::group::Installing test dependencies"
           echo "Installing jq for JSON parsing tests..."
           sudo apt-get update -qq
           sudo apt-get install -y jq
           echo "✓ Dependencies installed"
+          echo "::endgroup::"
+
+      - name: Display test environment
+        run: |
+          echo "::group::Test Environment Information"
+          echo "Bash version: $(bash --version | head -1)"
+          echo "Working directory: $(pwd)"
+          echo "Test runner location: $(ls -lh tests/test-runner.sh)"
+          echo "Number of unit tests: $(find tests/unit -name 'test_*.sh' -type f | wc -l)"
+          echo "::endgroup::"
 
       - name: Run unit tests
         run: |
-          echo "Running unit test suite..."
-          bash tests/test-runner.sh
+          echo "::group::Running unit test suite"
+          echo "Executing: bash tests/test-runner.sh"
+          if bash tests/test-runner.sh; then
+            echo "::notice::All unit tests passed successfully"
+          else
+            echo "::error::Unit tests failed. See details above."
+            exit 1
+          fi
+          echo "::endgroup::"
 
       - name: Display test summary
         if: always()
         run: |
-          echo "::notice::Unit tests completed. Check logs above for details."
+          if [ -f /tmp/test-full.log ]; then
+            echo "::group::Test Output Summary"
+            tail -50 /tmp/test-full.log
+            echo "::endgroup::"
+          fi
+          echo "::notice::Unit test execution completed. Check logs above for details."
