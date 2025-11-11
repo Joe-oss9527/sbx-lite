@@ -11,7 +11,7 @@ readonly _SBX_UI_LOADED=1
 
 # Source dependencies
 _LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck disable=SC1091
+# shellcheck source=/dev/null
 source "${_LIB_DIR}/common.sh"
 
 #==============================================================================

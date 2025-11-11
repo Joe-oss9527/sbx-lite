@@ -240,9 +240,11 @@ _init_colors
 
 # Source logging module (provides msg, warn, err, info, success, debug, die)
 _LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
 source "${_LIB_DIR}/logging.sh"
 
 # Source generators module (provides generate_uuid, generate_reality_keypair, etc.)
+# shellcheck source=/dev/null
 source "${_LIB_DIR}/generators.sh"
 
 # Setup cleanup trap (can be overridden by main script)
