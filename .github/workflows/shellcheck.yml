@@ -17,11 +17,21 @@ jobs:
   shellcheck:
     name: ShellCheck Static Analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         # Submodules not needed for code quality checks
+
+      - name: Display environment info
+        run: |
+          echo "::group::Environment Information"
+          echo "Runner OS: $RUNNER_OS"
+          echo "Working directory: $(pwd)"
+          echo "Shell files to check:"
+          find . -name "*.sh" -type f | grep -E "(install_multi|lib/)" | sort
+          echo "::endgroup::"
 
       - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@master
@@ -30,9 +40,10 @@ jobs:
           severity: warning
           format: gcc
           additional_files: 'lib/*.sh'
-          ignore_paths: 'docs'
+          ignore_paths: 'docs tests/unit/test_*.sh.skip'
         env:
           SHELLCHECK_OPTS: -x -S warning
+        continue-on-error: false
 
       - name: ShellCheck annotations
         if: failure()
@@ -43,9 +54,11 @@ jobs:
   syntax-check:
     name: Bash Syntax Validation
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     strategy:
       matrix:
         bash-version: ['5.0', '5.1', '5.2']
+      fail-fast: false
 
     steps:
       - name: Checkout code
@@ -53,24 +66,40 @@ jobs:
 
       - name: Setup Bash ${{ matrix.bash-version }}
         run: |
+          echo "::group::Bash Version Info"
           echo "Testing with system bash..."
           bash --version
+          echo "::endgroup::"
 
       - name: Check syntax of all shell scripts
         run: |
+          echo "::group::Syntax Check"
           echo "Checking syntax..."
           shopt -s globstar nullglob
+          error_count=0
           for script in install_multi.sh lib/*.sh; do
             if [[ -f "$script" ]]; then
               echo "→ Checking $script..."
-              bash -n "$script" || exit 1
+              if bash -n "$script" 2>&1; then
+                echo "  ✓ OK"
+              else
+                echo "  ✗ FAILED"
+                ((error_count++))
+              fi
             fi
           done
+          echo "::endgroup::"
+
+          if [[ $error_count -gt 0 ]]; then
+            echo "::error::Found $error_count syntax error(s)"
+            exit 1
+          fi
           echo "✓ All scripts have valid syntax"
 
   code-style:
     name: Code Style & Best Practices
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Checkout code
@@ -78,11 +107,16 @@ jobs:
 
       - name: Check for common issues
         run: |
+          echo "::group::Variable Quoting Check"
           echo "Checking for unquoted variables..."
-          ! grep -rn '\$[A-Z_][A-Z0-9_]*[^"]' --include="*.sh" lib/ || {
-            echo "::warning::Found potentially unquoted variables"
-          }
+          if grep -rn '\$[A-Z_][A-Z0-9_]*[^"]' --include="*.sh" lib/ 2>/dev/null; then
+            echo "::warning::Found potentially unquoted variables (review above)"
+          else
+            echo "✓ No unquoted variables found"
+          fi
+          echo "::endgroup::"
 
+          echo "::group::Strict Mode Check"
           echo "Checking for missing set -euo pipefail..."
           MISSING_STRICT_MODE=0
           for script in lib/*.sh; do
@@ -99,21 +133,31 @@ jobs:
           else
             echo "✓ All library modules have strict mode"
           fi
+          echo "::endgroup::"
 
       - name: Check script headers
         run: |
+          echo "::group::Shebang Check"
+          error_count=0
           for script in install_multi.sh lib/*.sh; do
             [[ -f "$script" ]] || continue
             if ! head -1 "$script" | grep -q '^#!/'; then
               echo "::error file=$script::Missing shebang line"
-              exit 1
+              ((error_count++))
             fi
           done
+
+          if [[ $error_count -gt 0 ]]; then
+            echo "::error::Found $error_count missing shebang(s)"
+            exit 1
+          fi
           echo "✓ All scripts have proper shebang lines"
+          echo "::endgroup::"
 
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Checkout code
@@ -121,27 +165,40 @@ jobs:
 
       - name: Run security checks
         run: |
+          echo "::group::Security Scans"
+
           echo "Checking for potential command injection..."
-          ! grep -rn 'eval.*\$' --include="*.sh" lib/ || {
+          if grep -rn 'eval.*\$' --include="*.sh" lib/; then
             echo "::error::Found potentially unsafe eval usage"
             exit 1
-          }
+          else
+            echo "✓ No unsafe eval found"
+          fi
 
+          echo ""
           echo "Checking for unsafe temporary file usage..."
-          ! grep -rn '/tmp/[^$]*\$' --include="*.sh" lib/ | grep -v mktemp || {
+          if grep -rn '/tmp/[^$]*\$' --include="*.sh" lib/ | grep -v mktemp; then
             echo "::warning::Found potentially unsafe temp file usage"
-          }
+          else
+            echo "✓ No unsafe temp file usage"
+          fi
 
+          echo ""
           echo "Checking for hardcoded credentials..."
-          ! grep -rni 'password.*=' --include="*.sh" lib/ | grep -v 'CERT_\|CF_\|HY2_' || {
+          if grep -rni 'password.*=' --include="*.sh" lib/ | grep -v 'CERT_\|CF_\|HY2_'; then
             echo "::warning::Found potential hardcoded credentials"
-          }
+          else
+            echo "✓ No hardcoded credentials found"
+          fi
 
+          echo ""
           echo "✓ Basic security checks passed"
+          echo "::endgroup::"
 
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout code
@@ -153,6 +210,7 @@ jobs:
           echo "Installing jq for JSON parsing tests..."
           sudo apt-get update -qq
           sudo apt-get install -y jq
+          jq --version
           echo "✓ Dependencies installed"
           echo "::endgroup::"
 
@@ -161,18 +219,29 @@ jobs:
           echo "::group::Test Environment Information"
           echo "Bash version: $(bash --version | head -1)"
           echo "Working directory: $(pwd)"
-          echo "Test runner location: $(ls -lh tests/test-runner.sh)"
+          echo "Git branch: $(git branch --show-current)"
+          echo "Test runner: $(ls -lh tests/test-runner.sh)"
           echo "Number of unit tests: $(find tests/unit -name 'test_*.sh' -type f | wc -l)"
+          echo ""
+          echo "Available test files:"
+          find tests/unit -name 'test_*.sh' -type f | sort | sed 's|^|  - |'
           echo "::endgroup::"
 
       - name: Run unit tests
         run: |
           echo "::group::Running unit test suite"
           echo "Executing: bash tests/test-runner.sh"
+          echo "---"
+
           if bash tests/test-runner.sh; then
-            echo "::notice::All unit tests passed successfully"
+            echo "---"
+            echo "::notice::✓ All unit tests passed successfully"
+            exit 0
           else
-            echo "::error::Unit tests failed. See details above."
+            TEST_EXIT_CODE=$?
+            echo "---"
+            echo "::error::✗ Unit tests failed with exit code: $TEST_EXIT_CODE"
+            echo "::error::Check the test output above for details"
             exit 1
           fi
           echo "::endgroup::"
@@ -180,9 +249,4 @@ jobs:
       - name: Display test summary
         if: always()
         run: |
-          if [ -f /tmp/test-full.log ]; then
-            echo "::group::Test Output Summary"
-            tail -50 /tmp/test-full.log
-            echo "::endgroup::"
-          fi
           echo "::notice::Unit test execution completed. Check logs above for details."
