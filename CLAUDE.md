@@ -17,6 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Development**:
 - [Code Architecture](#code-architecture--critical-functions) - Key functions and flow
 - [Bash Coding Standards](#bash-coding-standards--security-best-practices) - Quality and security requirements
+- [Common Bash Pitfalls](#common-bash-pitfalls--cicd-gotchas) - bash -e traps, shellcheck issues, CI debugging
 - [Troubleshooting](#troubleshooting) - Quick diagnostics and common issues
 
 ---
@@ -654,6 +655,115 @@ This ensures you always have access to the most up-to-date official documentatio
 - **JSON Generation**: Use `jq` with explicit error checking, never string concatenation
 - **Cleanup**: Use `trap` for reliable cleanup on exit/interrupt
 - **Character Encoding**: Never use Chinese characters in script output - use only English to ensure compatibility with terminals that don't support Unicode display
+
+### Common Bash Pitfalls & CI/CD Gotchas
+
+#### 🚨 CRITICAL: bash -e Mode Arithmetic Traps
+**Problem**: GitHub Actions and many CI systems run scripts with `bash -e` (exit on error). Arithmetic expressions that evaluate to 0 trigger immediate exit.
+
+**Symptom**: Script exits silently at `((count++))` when count=0, no error message, exit code 1
+
+**Why it fails**:
+```bash
+# WRONG - Fails in bash -e mode when count=0
+count=0
+((count++))  # Returns 0 (the old value), which is FALSE in arithmetic context
+# Script exits here with code 1 in bash -e mode!
+
+# CORRECT - Always safe in bash -e mode
+count=0
+count=$((count + 1))  # Returns 1 (the new value), always non-zero
+```
+
+**Root Cause**: `((count++))` post-increment returns the OLD value before incrementing. When count=0, it returns 0 (false), triggering bash -e exit.
+
+**Safe Alternatives**:
+```bash
+# Method 1: Use assignment (recommended)
+count=$((count + 1))
+
+# Method 2: Pre-increment (but less readable)
+((++count))  # Returns new value (1), safe
+
+# Method 3: Disable -e for that line (not recommended)
+((count++)) || true
+```
+
+**Detection**: Always test scripts locally with `bash -e` before CI:
+```bash
+bash -e your_script.sh
+```
+
+#### 🚨 CRITICAL: ShellCheck Source Directives
+**Problem**: Explicit `# shellcheck source=lib/file.sh` directives cause recursive analysis, leading to hangs with complex dependency trees.
+
+**Symptom**: ShellCheck hangs indefinitely on files with source statements, CI timeout after 5-10 minutes
+
+**Why it fails**:
+```bash
+# WRONG - Causes recursive analysis
+# shellcheck source=lib/common.sh
+source "${_LIB_DIR}/common.sh"
+# ShellCheck follows the chain: backup.sh → common.sh → logging.sh → ...
+# With 11 modules, this creates exponential complexity!
+
+# CORRECT - Prevents recursive analysis
+# shellcheck source=/dev/null
+source "${_LIB_DIR}/common.sh"
+# ShellCheck treats the source as empty, no recursion
+```
+
+**Why NOT to use `disable=SC1091`**:
+```bash
+# WRONG - Still tries to analyze the file!
+# shellcheck disable=SC1091
+source "${_LIB_DIR}/common.sh"
+# This only disables the WARNING, but shellcheck still attempts
+# to follow and analyze the source file
+```
+
+**Correct Pattern for Modular Projects**:
+```bash
+# At top of each library module
+# shellcheck source=/dev/null
+source "${_LIB_DIR}/dependency.sh"
+
+# In CI workflow, use -S error to ignore SC2154 warnings
+shellcheck -e SC1090 -e SC1091 -S error file.sh
+```
+
+**Side Effects**: You'll see SC2154 warnings (referenced but not assigned) for variables from sourced files. This is expected and safe - use `-S error` to filter these out.
+
+#### Debugging CI Failures
+When CI fails but local tests pass:
+
+1. **Reproduce CI environment**:
+   ```bash
+   # GitHub Actions runs with bash -e by default
+   bash -e your_script.sh
+   ```
+
+2. **Add comprehensive logging**:
+   ```bash
+   # Capture exit codes
+   command 2>&1
+   exit_code=$?
+   echo "Command exited with: $exit_code"
+
+   # Show which step failed
+   echo "Step 1: Doing X..."
+   do_x
+   echo "Step 2: Doing Y..."
+   do_y
+   ```
+
+3. **Check for hidden failures**:
+   ```bash
+   # These all fail silently in bash -e:
+   ((count++))         # When count=0
+   grep "pattern" file # When no match found
+   [[ $? -eq 0 ]]     # When checking previous false result
+   ```
 
 ## Client Compatibility Requirements
 - Script generates sing-box-compatible Reality configurations
