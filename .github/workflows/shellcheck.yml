@@ -47,31 +47,49 @@ jobs:
           echo "Note: Using -S error to ignore SC2154 warnings from modular architecture"
           echo ""
 
+          # Show shellcheck version
+          shellcheck --version
+          echo ""
+
           exit_code=0
           count=0
+          failed_files=()
 
           for script in install_multi.sh lib/*.sh; do
             if [[ -f "$script" ]]; then
               ((count++))
               echo "[$count] Checking $script..."
 
-              if shellcheck -e SC1090 -e SC1091 -S error "$script"; then
+              # Capture output to show on failure
+              output=$(shellcheck -e SC1090 -e SC1091 -S error "$script" 2>&1)
+              sc_exit=$?
+
+              if [[ $sc_exit -eq 0 ]]; then
                 echo "  ✓ OK"
               else
-                echo "  ✗ FAILED"
+                echo "  ✗ FAILED with exit code $sc_exit"
+                echo "  --- Error details ---"
+                echo "$output" | sed 's/^/  /'
+                echo "  --- End of errors ---"
+                failed_files+=("$script")
                 exit_code=1
               fi
             fi
           done
 
           echo ""
-          echo "Checked $count scripts"
+          echo "========================================"
+          echo "Summary: Checked $count scripts"
 
           if [[ $exit_code -eq 0 ]]; then
             echo "::notice::✓ All ShellCheck tests passed ($count scripts)"
           else
-            echo "::error::✗ ShellCheck found issues (see output above)"
-            echo "::error::To fix locally: shellcheck -e SC1090 -e SC1091 -S error <file>"
+            echo "::error::✗ ${#failed_files[@]} file(s) failed ShellCheck"
+            echo "::error::Failed files:"
+            for file in "${failed_files[@]}"; do
+              echo "::error::  - $file"
+            done
+            echo "::error::To debug locally: shellcheck -e SC1090 -e SC1091 -S error <file>"
           fi
 
           exit $exit_code
