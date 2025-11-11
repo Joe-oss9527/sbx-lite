@@ -17,6 +17,7 @@ readonly _SBX_VERSION_LOADED=1
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Load dependencies
+# shellcheck source=/dev/null
 source "${SCRIPT_DIR}/common.sh"
 source "${SCRIPT_DIR}/network.sh"
 

@@ -16,6 +16,12 @@ if ! source "${PROJECT_ROOT}/lib/messages.sh" 2>/dev/null; then
     exit 1
 fi
 
+# Disable traps after loading modules (modules set their own traps)
+trap - EXIT INT TERM
+
+# Reset to permissive mode (modules use strict mode with set -e)
+set +e
+
 # Test counters
 TESTS_RUN=0
 TESTS_PASSED=0

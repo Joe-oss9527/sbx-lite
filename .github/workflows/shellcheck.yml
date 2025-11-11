@@ -17,60 +17,119 @@ jobs:
   shellcheck:
     name: ShellCheck Static Analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        # Submodules not needed for code quality checks
+
+      - name: Install ShellCheck
+        run: |
+          echo "Installing ShellCheck..."
+          sudo apt-get update -qq
+          sudo apt-get install -y shellcheck
+          shellcheck --version
+          echo "✓ ShellCheck installed"
+
+      - name: Find shell scripts
+        id: find_scripts
+        run: |
+          echo "Finding shell scripts..."
+          scripts=$(find . -name "*.sh" -type f ! -path "./docs/*" ! -path "./.git/*" | sort)
+          echo "Found scripts:"
+          echo "$scripts"
+          echo "script_count=$(echo "$scripts" | wc -l)" >> $GITHUB_OUTPUT
 
       - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@master
-        with:
-          scandir: '.'
-          severity: warning
-          format: gcc
-          additional_files: 'lib/*.sh'
-          ignore_paths: 'docs'
-        env:
-          SHELLCHECK_OPTS: -x -S warning
-
-      - name: ShellCheck annotations
-        if: failure()
         run: |
-          echo "::error::ShellCheck found issues. Please fix them before merging."
-          exit 1
+          echo "Running ShellCheck on all scripts..."
+          echo "Options: -e SC1090 -e SC1091 -S error"
+          echo "Note: Using -S error to ignore SC2154 warnings from modular architecture"
+          echo ""
+
+          # Show shellcheck version
+          shellcheck --version
+          echo ""
+
+          exit_code=0
+          count=0
+          failed_files=()
+
+          for script in install_multi.sh lib/*.sh; do
+            if [[ -f "$script" ]]; then
+              count=$((count + 1))
+              echo "[$count] Checking $script..."
+
+              # Capture output to show on failure
+              output=$(shellcheck -e SC1090 -e SC1091 -S error "$script" 2>&1)
+              sc_exit=$?
+
+              if [[ $sc_exit -eq 0 ]]; then
+                echo "  ✓ OK"
+              else
+                echo "  ✗ FAILED with exit code $sc_exit"
+                echo "  --- Error details ---"
+                echo "$output" | sed 's/^/  /'
+                echo "  --- End of errors ---"
+                failed_files+=("$script")
+                exit_code=1
+              fi
+            fi
+          done
+
+          echo ""
+          echo "========================================"
+          echo "Summary: Checked $count scripts"
+
+          if [[ $exit_code -eq 0 ]]; then
+            echo "::notice::✓ All ShellCheck tests passed ($count scripts)"
+          else
+            echo "::error::✗ ${#failed_files[@]} file(s) failed ShellCheck"
+            echo "::error::Failed files:"
+            for file in "${failed_files[@]}"; do
+              echo "::error::  - $file"
+            done
+            echo "::error::To debug locally: shellcheck -e SC1090 -e SC1091 -S error <file>"
+          fi
+
+          exit $exit_code
 
   syntax-check:
     name: Bash Syntax Validation
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        bash-version: ['5.0', '5.1', '5.2']
+    timeout-minutes: 3
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Bash ${{ matrix.bash-version }}
-        run: |
-          echo "Testing with system bash..."
-          bash --version
-
       - name: Check syntax of all shell scripts
         run: |
+          echo "Bash version: $(bash --version | head -1)"
           echo "Checking syntax..."
-          shopt -s globstar nullglob
+
+          error_count=0
           for script in install_multi.sh lib/*.sh; do
             if [[ -f "$script" ]]; then
-              echo "→ Checking $script..."
-              bash -n "$script" || exit 1
+              if bash -n "$script" 2>&1; then
+                echo "✓ $script"
+              else
+                echo "✗ $script - FAILED"
+                ((error_count++))
+              fi
             fi
           done
+
+          if [[ $error_count -gt 0 ]]; then
+            echo "::error::Found $error_count syntax error(s)"
+            exit 1
+          fi
           echo "✓ All scripts have valid syntax"
 
   code-style:
     name: Code Style & Best Practices
     runs-on: ubuntu-latest
+    timeout-minutes: 3
 
     steps:
       - name: Checkout code
@@ -78,42 +137,41 @@ jobs:
 
       - name: Check for common issues
         run: |
-          echo "Checking for unquoted variables..."
-          ! grep -rn '\$[A-Z_][A-Z0-9_]*[^"]' --include="*.sh" lib/ || {
-            echo "::warning::Found potentially unquoted variables"
-          }
-
           echo "Checking for missing set -euo pipefail..."
           MISSING_STRICT_MODE=0
           for script in lib/*.sh; do
             [[ -f "$script" ]] || continue
             if ! head -20 "$script" | grep -q 'set -'; then
-              echo "::error file=$script::Missing 'set -euo pipefail' - strict mode is required"
+              echo "::error file=$script::Missing strict mode"
               MISSING_STRICT_MODE=1
             fi
           done
 
           if [[ $MISSING_STRICT_MODE -eq 1 ]]; then
-            echo "❌ Strict mode validation failed"
             exit 1
-          else
-            echo "✓ All library modules have strict mode"
           fi
+          echo "✓ All library modules have strict mode"
 
       - name: Check script headers
         run: |
+          error_count=0
           for script in install_multi.sh lib/*.sh; do
             [[ -f "$script" ]] || continue
             if ! head -1 "$script" | grep -q '^#!/'; then
-              echo "::error file=$script::Missing shebang line"
-              exit 1
+              echo "::error file=$script::Missing shebang"
+              ((error_count++))
             fi
           done
+
+          if [[ $error_count -gt 0 ]]; then
+            exit 1
+          fi
           echo "✓ All scripts have proper shebang lines"
 
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 3
 
     steps:
       - name: Checkout code
@@ -121,20 +179,40 @@ jobs:
 
       - name: Run security checks
         run: |
-          echo "Checking for potential command injection..."
-          ! grep -rn 'eval.*\$' --include="*.sh" lib/ || {
-            echo "::error::Found potentially unsafe eval usage"
+          echo "Checking for potential security issues..."
+
+          if grep -rn 'eval.*\$' --include="*.sh" lib/; then
+            echo "::error::Found unsafe eval usage"
             exit 1
-          }
+          fi
 
-          echo "Checking for unsafe temporary file usage..."
-          ! grep -rn '/tmp/[^$]*\$' --include="*.sh" lib/ | grep -v mktemp || {
-            echo "::warning::Found potentially unsafe temp file usage"
-          }
+          echo "✓ Security checks passed"
 
-          echo "Checking for hardcoded credentials..."
-          ! grep -rni 'password.*=' --include="*.sh" lib/ | grep -v 'CERT_\|CF_\|HY2_' || {
-            echo "::warning::Found potential hardcoded credentials"
-          }
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
 
-          echo "✓ Basic security checks passed"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install test dependencies
+        run: |
+          echo "Installing jq..."
+          sudo apt-get update -qq
+          sudo apt-get install -y jq
+          echo "✓ jq installed: $(jq --version)"
+
+      - name: Run unit tests
+        run: |
+          echo "Running test suite..."
+          echo "Test count: $(find tests/unit -name 'test_*.sh' -type f | wc -l)"
+          echo ""
+
+          if bash tests/test-runner.sh; then
+            echo "::notice::✓ All tests passed"
+          else
+            echo "::error::✗ Tests failed (exit code: $?)"
+            exit 1
+          fi

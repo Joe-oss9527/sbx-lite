@@ -132,6 +132,7 @@ run_tests() {
     fi
 
     local test_file
+    local test_file_failures=0
     while IFS= read -r test_file; do
         echo -e "${BLUE}Running:${NC} $(basename "$test_file")"
         echo "----------------------------------------"
@@ -139,7 +140,9 @@ run_tests() {
         if bash "$test_file"; then
             echo -e "${GREEN}Test file passed${NC}"
         else
-            echo -e "${YELLOW}Test file skipped or failed${NC}"
+            local exit_code=$?
+            echo -e "${RED}Test file FAILED (exit code: $exit_code)${NC}"
+            ((test_file_failures++))
         fi
         echo ""
     done <<< "$test_files"
@@ -151,9 +154,12 @@ run_tests() {
     echo -e "Total:   ${TOTAL_TESTS}"
     echo -e "Passed:  ${GREEN}${PASSED_TESTS}${NC}"
     echo -e "Failed:  ${RED}${FAILED_TESTS}${NC}"
+    if [[ $test_file_failures -gt 0 ]]; then
+        echo -e "Test files failed: ${RED}${test_file_failures}${NC}"
+    fi
     echo "========================================"
 
-    if [[ $FAILED_TESTS -gt 0 ]]; then
+    if [[ $FAILED_TESTS -gt 0 ]] || [[ $test_file_failures -gt 0 ]]; then
         return 1
     fi
     return 0

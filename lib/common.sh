@@ -177,7 +177,8 @@ get_file_size() {
 cleanup() {
   local exit_code=$?
 
-  if [[ $exit_code -ne 0 ]]; then
+  # Skip error reporting in test mode (tests manage their own error reporting)
+  if [[ $exit_code -ne 0 && -z "${SBX_TEST_MODE:-}" ]]; then
     # err() function will be available from logging.sh
     if declare -f err >/dev/null 2>&1; then
       err "Script execution failed with exit code $exit_code"
@@ -239,9 +240,11 @@ _init_colors
 
 # Source logging module (provides msg, warn, err, info, success, debug, die)
 _LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
 source "${_LIB_DIR}/logging.sh"
 
 # Source generators module (provides generate_uuid, generate_reality_keypair, etc.)
+# shellcheck source=/dev/null
 source "${_LIB_DIR}/generators.sh"
 
 # Setup cleanup trap (can be overridden by main script)
