@@ -13,9 +13,7 @@ export SBX_TEST_MODE=1
 # Change to project root
 cd "$PROJECT_ROOT" || exit 1
 
-# Load required modules (disable traps first)
-trap - EXIT INT TERM
-
+# Load required modules
 if ! source lib/common.sh 2>/dev/null; then
     echo "✗ Failed to load lib/common.sh"
     exit 1
@@ -31,6 +29,12 @@ if ! source lib/version.sh 2>/dev/null; then
     echo "⚠ SKIP: lib/version.sh not yet created (expected for TDD red phase)"
     exit 0
 fi
+
+# Disable traps after loading modules (modules set their own traps)
+trap - EXIT INT TERM
+
+# Reset to permissive mode (modules use strict mode with set -e)
+set +e
 
 # Test statistics
 TOTAL_TESTS=0

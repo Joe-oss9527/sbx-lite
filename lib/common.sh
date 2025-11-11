@@ -177,7 +177,8 @@ get_file_size() {
 cleanup() {
   local exit_code=$?
 
-  if [[ $exit_code -ne 0 ]]; then
+  # Skip error reporting in test mode (tests manage their own error reporting)
+  if [[ $exit_code -ne 0 && -z "${SBX_TEST_MODE:-}" ]]; then
     # err() function will be available from logging.sh
     if declare -f err >/dev/null 2>&1; then
       err "Script execution failed with exit code $exit_code"

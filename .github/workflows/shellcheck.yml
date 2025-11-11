@@ -138,3 +138,28 @@ jobs:
           }
 
           echo "✓ Basic security checks passed"
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install test dependencies
+        run: |
+          echo "Installing jq for JSON parsing tests..."
+          sudo apt-get update -qq
+          sudo apt-get install -y jq
+          echo "✓ Dependencies installed"
+
+      - name: Run unit tests
+        run: |
+          echo "Running unit test suite..."
+          bash tests/test-runner.sh
+
+      - name: Display test summary
+        if: always()
+        run: |
+          echo "::notice::Unit tests completed. Check logs above for details."
